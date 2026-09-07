@@ -1,0 +1,21 @@
+# Local Postgres for development and the RLS test suite.
+# Not used in production. Supabase is the production database.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ledger
+    ports:
+      - "5432:5432"
+    volumes:
+      - ledger-pg:/var/lib/postgresql/data
+      - ./packages/api/src/db/rls/000_roles.sql:/docker-entrypoint-initdb.d/000_roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ledger"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  ledger-pg:

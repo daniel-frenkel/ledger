@@ -1,0 +1,24 @@
+{
+  "name": "ledger",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A prediction ledger for behavioral experiments. Not a therapist.",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter './packages/*' build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:rls": "pnpm --filter @ledger/api test:rls",
+    "lint": "pnpm -r lint",
+    "dev:api": "pnpm --filter @ledger/api dev",
+    "dev:client": "pnpm --filter @ledger/client start",
+    "db:generate": "pnpm --filter @ledger/api db:generate",
+    "db:migrate": "pnpm --filter @ledger/api db:migrate"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
