@@ -5,6 +5,7 @@ import {
   CONFIDENCE_MAX,
   CONFIDENCE_MIN,
   CREDITED_TO,
+  EXIT_MOVES,
   INTENSITY_MAX,
   INTENSITY_MIN,
   KIT_ITEMS,
@@ -100,6 +101,9 @@ export const predictionSchema = z
     confidence: confidence,
     reviseAfterN: z.number().int().min(1).max(100).nullable().optional(),
     scheduledFor: isoDate.nullable().optional(),
+    /** "How will you probably get out of this?" — the exit forecast. */
+    exitForecast: z.enum(EXIT_MOVES).nullable().optional(),
+    exitForecastNote: shortText.nullable().optional(),
     // after
     resolvedAt: isoDate.nullable().optional(),
     actualOutcome: longText.nullable().optional(),
@@ -108,6 +112,9 @@ export const predictionSchema = z
     surpriseRating: surprise.nullable().optional(),
     presentForIt: z.boolean().nullable().optional(),
     ownPart: z.enum(OWN_PART_OPTIONS).nullable().optional(),
+    /** "Did you?" — the exit actually taken. */
+    exitActual: z.enum(EXIT_MOVES).nullable().optional(),
+    exitActualNote: shortText.nullable().optional(),
     // never run
     abandonedAt: isoDate.nullable().optional(),
     abandonReason: z.enum(ABANDON_REASONS).nullable().optional(),
@@ -135,6 +142,8 @@ export const newPredictionInput = z.object({
   confidence: confidence,
   reviseAfterN: z.number().int().min(1).max(100).optional(),
   scheduledFor: isoDate.optional(),
+  exitForecast: z.enum(EXIT_MOVES).optional(),
+  exitForecastNote: shortText.optional(),
   priorIds: z.array(uuid).max(10).default([]),
   bodyBefore: bodyStateBeforeSchema.optional(),
 });
@@ -147,6 +156,8 @@ export const resolvePredictionInput = z.object({
   surpriseRating: surprise,
   presentForIt: z.boolean(),
   ownPart: z.enum(OWN_PART_OPTIONS).optional(),
+  exitActual: z.enum(EXIT_MOVES).optional(),
+  exitActualNote: shortText.optional(),
   reinterpretation: longText.optional(),
   bodyAfter: bodyStateAfterSchema.optional(),
 });

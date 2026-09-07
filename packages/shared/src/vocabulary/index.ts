@@ -75,6 +75,32 @@ export type AbandonReason = (typeof ABANDON_REASONS)[number];
 export const OWN_PART_OPTIONS = ['none', 'made_it_likelier', 'held_back', 'unsure'] as const;
 export type OwnPart = (typeof OWN_PART_OPTIONS)[number];
 
+/**
+ * The exit forecast: a second prediction, about the self. "When this gets
+ * hard, my way out will be…" — the five furnace moves (UCM §2.3) in plain
+ * behavior words, never theory words, on the client side. Forecasting the
+ * move is what lets it be seen while it fires; a move you called in advance
+ * cannot be filed as the room's doing. Graded like any other forecast.
+ */
+export const EXIT_MOVES = [
+  'leave_early', // avoid
+  'not_really_try', // withdraw effort
+  'explain_it_away', // reinterpret
+  'notice_only_the_bad', // filter
+  'push_until_they_react', // provoke
+  'none', // "I don't think I'll take one"
+] as const;
+export type ExitMove = (typeof EXIT_MOVES)[number];
+
+export const EXIT_MOVE_LABELS: Record<ExitMove, string> = {
+  leave_early: 'Leave before the hard part',
+  not_really_try: 'Not really try',
+  explain_it_away: 'Explain it away afterward',
+  notice_only_the_bad: 'Only notice the bad part',
+  push_until_they_react: 'Push until they react',
+  none: 'No exit — I’ll stay in it',
+};
+
 // ---------------------------------------------------------------------------
 // Priors
 // ---------------------------------------------------------------------------

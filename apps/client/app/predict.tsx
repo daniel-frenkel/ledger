@@ -9,6 +9,8 @@ import {
   BODY_CHANNELS,
   BODY_CHANNEL_LABELS,
   BODY_SEED_WORDS,
+  EXIT_MOVES,
+  EXIT_MOVE_LABELS,
   KIT_ITEMS,
   PRIOR_CATEGORIES,
   PRIOR_CATEGORY_LABELS,
@@ -16,6 +18,7 @@ import {
   suggestPriors,
   type BodyChannel,
   type BodyStateBefore,
+  type ExitMove,
   type KitItem,
   type Prediction,
   type Prior,
@@ -35,6 +38,8 @@ export default function Predict() {
   const [expected, setExpected] = useState('');
   const [confidence, setConfidence] = useState<number | null>(null);
   const [reviseAfterN, setReviseAfterN] = useState<number | null>(null);
+  const [exitForecast, setExitForecast] = useState<ExitMove | null>(null);
+  const [exitNote, setExitNote] = useState('');
   const [priors, setPriors] = useState<Prior[]>([]);
   const [priorId, setPriorId] = useState<string | null>(null);
   const [newPriorLabel, setNewPriorLabel] = useState('');
@@ -57,7 +62,15 @@ export default function Predict() {
 
   const save = async () => {
     setErr(null);
-    const parsed = newPredictionInput.safeParse({ situation, expectedOutcome: expected, confidence, reviseAfterN: reviseAfterN ?? undefined, priorIds: priorId ? [priorId] : [] });
+    const parsed = newPredictionInput.safeParse({
+      situation,
+      expectedOutcome: expected,
+      confidence,
+      reviseAfterN: reviseAfterN ?? undefined,
+      exitForecast: exitForecast ?? undefined,
+      exitForecastNote: exitNote.trim() || undefined,
+      priorIds: priorId ? [priorId] : [],
+    });
     if (!parsed.success) {
       setErr('Fill in the situation, what you expect, and how sure you are.');
       return;
@@ -75,6 +88,8 @@ export default function Predict() {
       expectedOutcome: parsed.data.expectedOutcome,
       confidence: parsed.data.confidence,
       reviseAfterN: parsed.data.reviseAfterN ?? null,
+      exitForecast: parsed.data.exitForecast ?? null,
+      exitForecastNote: parsed.data.exitForecastNote ?? null,
       priorIds,
       createdAt: now,
       clientUpdatedAt: now,
@@ -133,6 +148,17 @@ export default function Predict() {
       ) : null}
 
       <Scale label="How many times would this have to go differently before you’d revise the rule?" hint="Optional. Say it now, before the result." min={1} max={10} value={reviseAfterN} onChange={setReviseAfterN} />
+
+      <Choice
+        label="How will you probably get out of this?"
+        hint="Optional. A second forecast, about you. An exit you called in advance is easier to see when it starts."
+        options={EXIT_MOVES.map((m) => ({ value: m, label: EXIT_MOVE_LABELS[m] }))}
+        value={exitForecast}
+        onChange={(v) => setExitForecast(exitForecast === v ? null : v)}
+      />
+      {exitForecast && exitForecast !== 'none' ? (
+        <Field label="What it’ll look like" value={exitNote} onChangeText={setExitNote} placeholder="A bathroom break that never ends." maxLength={80} />
+      ) : null}
 
       <Divider />
       {!showBody ? (

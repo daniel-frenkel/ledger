@@ -179,11 +179,28 @@ describe('furnaceProfile', () => {
     expect(f.survivalsWithKit).toBe(2);
   });
 
+  it('grades the exit forecast', () => {
+    const f = furnaceProfile(
+      [
+        resolved('miss', { exitForecast: 'leave_early', exitActual: 'leave_early' }),
+        resolved('miss', { exitForecast: 'leave_early', exitActual: 'none' }),
+        resolved('miss', { exitForecast: 'leave_early', exitActual: 'explain_it_away' }),
+        resolved('miss', { exitForecast: 'none', exitActual: 'not_really_try' }),
+        resolved('miss', { exitActual: 'none' }),
+        resolved('miss', { exitForecast: 'leave_early' }), // never answered "did you?"
+      ],
+      [],
+      [],
+    );
+    expect(f.exits).toEqual({ forecast: 3, taken: 1, notTaken: 1, differentExit: 1, unforecastExit: 1 });
+  });
+
   it('returns nulls with no data', () => {
     const f = furnaceProfile([], [], []);
     expect(f.abandonmentRate).toBeNull();
     expect(f.reinterpretationRate).toBeNull();
     expect(f.neverMisses).toBe(false);
+    expect(f.exits.forecast).toBe(0);
   });
 });
 

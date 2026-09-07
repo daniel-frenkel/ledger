@@ -87,6 +87,14 @@ export interface FurnaceProfile {
   survivalsWithoutKit: number;
   /** Body-channel experiments where kit was used or credit went elsewhere. */
   survivalsWithKit: number;
+  /**
+   * The exit forecast, graded. `forecast` = resolved predictions that named
+   * an exit other than "none"; `taken` = the named exit was the one taken;
+   * `notTaken` = named an exit and reported none. "Predicted an exit, didn't
+   * take it" is the one round where the furnace was interrupted long enough
+   * for an unmanufactured error to land.
+   */
+  exits: { forecast: number; taken: number; notTaken: number; differentExit: number; unforecastExit: number };
 }
 
 export interface PriorSummary {
@@ -295,6 +303,20 @@ export function furnaceProfile(
     else survivalsWithKit += 1;
   }
 
+  const exits = { forecast: 0, taken: 0, notTaken: 0, differentExit: 0, unforecastExit: 0 };
+  for (const p of resolved) {
+    if (p.exitActual == null) continue; // not answered
+    const f = p.exitForecast ?? null;
+    if (f && f !== 'none') {
+      exits.forecast += 1;
+      if (p.exitActual === f) exits.taken += 1;
+      else if (p.exitActual === 'none') exits.notTaken += 1;
+      else exits.differentExit += 1;
+    } else if (p.exitActual !== 'none') {
+      exits.unforecastExit += 1;
+    }
+  }
+
   const denom = abandoned.length + resolved.length;
   return {
     neverMisses: scored.length >= 5 && misses === 0 && (meanConf ?? 0) >= HIGH_CONFIDENCE_THRESHOLD,
@@ -306,6 +328,7 @@ export function furnaceProfile(
     ownPart,
     survivalsWithoutKit,
     survivalsWithKit,
+    exits,
   };
 }
 

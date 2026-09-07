@@ -8,6 +8,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ABANDON_REASONS,
   CREDITED_TO,
+  EXIT_MOVES,
+  EXIT_MOVE_LABELS,
   KIT_ITEMS,
   OUTCOME_SOURCES,
   OUTCOME_VERDICTS,
@@ -18,6 +20,7 @@ import {
   type AbandonReason,
   type BodyStateAfter,
   type CreditedTo,
+  type ExitMove,
   type KitItem,
   type OutcomeSource,
   type OutcomeVerdict,
@@ -51,6 +54,8 @@ export default function Resolve() {
   const [surprise, setSurprise] = useState<number | null>(null);
   const [present, setPresent] = useState<'yes' | 'no' | null>(null);
   const [ownPart, setOwnPart] = useState<OwnPart | null>(null);
+  const [exitActual, setExitActual] = useState<ExitMove | null>(null);
+  const [exitNote, setExitNote] = useState('');
   const [reinterp, setReinterp] = useState('');
   const [abandonReason, setAbandonReason] = useState<AbandonReason | null>(null);
   // body after
@@ -88,6 +93,8 @@ export default function Resolve() {
       surpriseRating: surprise,
       presentForIt: present === 'yes',
       ownPart: ownPart ?? undefined,
+      exitActual: exitActual ?? undefined,
+      exitActualNote: exitNote.trim() || undefined,
       reinterpretation: reinterp.trim() || undefined,
     });
     if (!parsed.success || present == null) {
@@ -104,6 +111,8 @@ export default function Resolve() {
       surpriseRating: parsed.data.surpriseRating,
       presentForIt: parsed.data.presentForIt,
       ownPart: parsed.data.ownPart ?? null,
+      exitActual: parsed.data.exitActual ?? null,
+      exitActualNote: parsed.data.exitActualNote ?? null,
       clientUpdatedAt: now,
     };
     const gate = await crisisGate('prediction', p.id, [resolved.actualOutcome, parsed.data.reinterpretation]);
@@ -125,6 +134,12 @@ export default function Resolve() {
     return (
       <Screen>
         {done.crisis ? <CrisisCard resources={done.crisis.risk.resources} onDismiss={() => router.back()} /> : null}
+        {p.exitForecast && p.exitForecast !== 'none' && exitActual === 'none' ? (
+          <Card>
+            <P>You said you’d probably {EXIT_MOVE_LABELS[p.exitForecast].toLowerCase()}. You didn’t.</P>
+            <Small>That’s the round that counts: the exit was named, and not taken.</Small>
+          </Card>
+        ) : null}
         {done.loud ? (
           <Card style={{ borderColor: t.accent, borderWidth: 2 }}>
             <H2>Read it back</H2>
@@ -180,6 +195,18 @@ export default function Resolve() {
           ) : null}
 
           <Divider />
+          {p.exitForecast ? (
+            <>
+              <Small>
+                Before, you said your exit would probably be: {EXIT_MOVE_LABELS[p.exitForecast].toLowerCase()}
+                {p.exitForecastNote ? ` — “${p.exitForecastNote}”` : ''}.
+              </Small>
+              <Choice label="Did you?" options={EXIT_MOVES.map((m) => ({ value: m, label: EXIT_MOVE_LABELS[m] }))} value={exitActual} onChange={setExitActual} />
+            </>
+          ) : (
+            <Choice label="Did you take an exit?" hint="Optional." options={EXIT_MOVES.map((m) => ({ value: m, label: EXIT_MOVE_LABELS[m] }))} value={exitActual} onChange={setExitActual} />
+          )}
+          {exitActual && exitActual !== 'none' ? <Field label="What it looked like" value={exitNote} onChangeText={setExitNote} maxLength={80} /> : null}
           <Choice label="Your part, if any" hint="Optional. Did you do anything that made it more likely to go the way you expected?" options={OWN_PART_OPTIONS.map((o) => ({ value: o, label: OWN_PART_LABELS[o] }))} value={ownPart} onChange={setOwnPart} />
           <Field label="What did you tell yourself about why it went that way?" hint="Optional. This is kept as its own dated note; it can’t change what you wrote above." value={reinterp} onChangeText={setReinterp} multiline placeholder="He was only being nice because Mom was there." />
 

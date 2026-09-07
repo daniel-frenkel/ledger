@@ -36,6 +36,7 @@ import {
   ABANDON_REASONS,
   BODY_CHANNELS,
   CREDITED_TO,
+  EXIT_MOVES,
   KIT_ITEMS,
   LINK_STATUSES,
   OUTCOME_SOURCES,
@@ -82,6 +83,7 @@ export const bodyChannel = pgEnum('body_channel', BODY_CHANNELS);
 export const kitItem = pgEnum('kit_item', KIT_ITEMS);
 export const verdictArrived = pgEnum('verdict_arrived', VERDICT_ARRIVED);
 export const creditedTo = pgEnum('credited_to', CREDITED_TO);
+export const exitMove = pgEnum('exit_move', EXIT_MOVES);
 export const crisisSource = pgEnum('crisis_source', ['prediction', 'journal', 'body_state', 'checkin']);
 
 // ---------------------------------------------------------------------------
@@ -151,6 +153,9 @@ export const predictions = pgTable(
     /** Step 6 pre-commit: "how many times would this have to happen before you'd revise the rule?" */
     reviseAfterN: smallint('revise_after_n'),
     scheduledFor: ts('scheduled_for'),
+    /** "How will you probably get out of this?" — the exit forecast (UCM §2.3 moves, graded like any forecast). */
+    exitForecast: exitMove('exit_forecast'),
+    exitForecastNoteEnc: bytea('exit_forecast_note_enc'),
 
     // after
     resolvedAt: ts('resolved_at'),
@@ -164,6 +169,9 @@ export const predictions = pgTable(
     presentForIt: boolean('present_for_it'),
     /** Self-report of the client's part. Weak per entry; the drift is the data. */
     ownPart: ownPart('own_part'),
+    /** "Did you?" — the exit actually taken. */
+    exitActual: exitMove('exit_actual'),
+    exitActualNoteEnc: bytea('exit_actual_note_enc'),
 
     // never run — the avoid move, made countable
     abandonedAt: ts('abandoned_at'),
