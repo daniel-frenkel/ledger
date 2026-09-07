@@ -43,6 +43,12 @@ export default function Ledger() {
           {calibration.meanConfidenceOnMisses != null ? (
             <Small>When it didn’t happen, you’d been {Math.round(calibration.meanConfidenceOnMisses)}% sure it would.</Small>
           ) : null}
+          {furnace.exits.forecast > 0 ? (
+            <Small>
+              Exits: named {furnace.exits.forecast}, took {furnace.exits.taken}, didn’t take {furnace.exits.notTaken}
+              {furnace.exits.differentExit ? `, took a different one ${furnace.exits.differentExit}` : ''}.
+            </Small>
+          ) : null}
           {furnace.survivalsWithoutKit + furnace.survivalsWithKit > 0 ? (
             <Small>
               Body: got through it {furnace.survivalsWithoutKit} {furnace.survivalsWithoutKit === 1 ? 'time' : 'times'} with nothing on the table, {furnace.survivalsWithKit} with the kit.

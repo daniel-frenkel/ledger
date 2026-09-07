@@ -259,4 +259,15 @@ describe('POST /v1/sync', () => {
     const r3 = await push(CLIENT_A, { since: r2.body.serverTime });
     expect(r3.body.predictions).toEqual([]);
   });
+
+  it('round-trips the exit forecast and the exit taken, notes encrypted', async () => {
+    const p = openPrediction(1, { exitForecast: 'leave_early', exitForecastNote: 'bathroom break that never ends' });
+    const r1 = await push(CLIENT_A, { predictions: [p] });
+    expect(r1.body.predictions[0]!.exitForecast).toBe('leave_early');
+    expect(r1.body.predictions[0]!.exitForecastNote).toBe('bathroom break that never ends');
+    const r2 = await push(CLIENT_A, {
+      predictions: [{ ...p, resolvedAt: T2, actualOutcome: 'stayed', outcomeVerdict: 'miss', outcomeSource: 'observed', surpriseRating: 6, presentForIt: true, exitActual: 'none', clientUpdatedAt: T2 }],
+    });
+    expect(r2.body.predictions[0]!.exitActual).toBe('none');
+  });
 });
