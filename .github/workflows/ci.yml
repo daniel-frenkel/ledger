@@ -1,0 +1,34 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16
+        env: { POSTGRES_USER: postgres, POSTGRES_PASSWORD: password, POSTGRES_DB: ledger }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ledger" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ledger_api:ledger_api@localhost:5432/ledger
+      DATABASE_MIGRATE_URL: postgresql://postgres:password@localhost:5432/ledger
+      FIELD_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      AUTH_TEST_MODE: 'true'
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @ledger/shared build
+      - run: pnpm -r typecheck
+      - run: pnpm --filter @ledger/shared test
+      - run: psql "$DATABASE_MIGRATE_URL" -f packages/api/src/db/rls/000_roles.sql
+      - run: pnpm db:migrate
+      - run: pnpm --filter @ledger/api test
+      - run: pnpm --filter @ledger/api test:rls
