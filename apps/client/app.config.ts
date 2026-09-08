@@ -1,4 +1,30 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import dotenv from 'dotenv';
 import type { ExpoConfig } from 'expo/config';
+
+/**
+ * Load the one .env at the repo root. Expo reads .env from the app directory,
+ * and pnpm sets the cwd per package, so neither finds the root file on its
+ * own: walk up to the directory holding pnpm-workspace.yaml and load it from
+ * there. `override: false` — a real environment variable always wins, and a
+ * missing .env is not an error (CI injects everything directly).
+ */
+function loadRootEnv(): void {
+  let dir = path.resolve(process.cwd());
+  for (;;) {
+    if (fs.existsSync(path.join(dir, 'pnpm-workspace.yaml'))) {
+      const file = path.join(dir, '.env');
+      if (fs.existsSync(file)) dotenv.config({ path: file, override: false });
+      return;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return;
+    dir = parent;
+  }
+}
+
+loadRootEnv();
 
 const config: ExpoConfig = {
   name: 'Ledger',

@@ -91,6 +91,8 @@ Open `.env` and fill in:
 
 Leave blank: `ANTHROPIC_API_KEY`, `SENTRY_DSN`, `EXPO_ACCESS_TOKEN`, `DATABASE_CA_CERT`, `EXPO_PUBLIC_EAS_PROJECT_ID` (step 8 fills this one).
 
+There is only ever **one** `.env`, at the repo root. The API, the migration script, and the Expo config each walk up from wherever they were launched until they find `pnpm-workspace.yaml`, and load the `.env` next to it — so `pnpm dev:api` from the root and `tsx src/db/migrate.ts` from `packages/api` see the same file. A variable already set in the real environment always wins over the file, which is how CI runs with no `.env` at all.
+
 **Check:** `.env` exists, is not tracked by git (`git status` doesn't show it), and has no empty value for the required fields listed above.
 
 ---
@@ -172,7 +174,7 @@ Find the IPv4 address under your Wi-Fi adapter (something like `192.168.1.42`). 
 EXPO_PUBLIC_API_URL=http://192.168.1.42:8080
 ```
 
-Restart the API terminal (Ctrl+C, then `pnpm dev:api` again) so it picks up nothing — it doesn't need this — but the client does, and Expo reads `.env` at start.
+Restart the API terminal (Ctrl+C, then `pnpm dev:api` again) so it picks up nothing — it doesn't need this — but the client does, and `apps/client/app.config.ts` reads the root `.env` when Expo starts.
 
 The first time the phone connects, Windows Firewall will prompt for Node. Allow it on **private** networks.
 
