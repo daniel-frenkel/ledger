@@ -22,14 +22,15 @@ Ledger can be used alone. Connecting a clinician is optional and requires your e
 | --- | --- |
 | `packages/shared` | Types, zod schemas, and every number the app shows: calibration, prior clustering, the furnace profile, the crisis rules. Pure functions. No network, no LLM. Fully unit-tested. |
 | `packages/api` | Fastify server. Verifies Supabase JWTs, enforces row-level security in Postgres *and* in application code, encrypts free text at the field level, runs the sync endpoint the phone talks to, and is the only place the Anthropic API is ever called. |
-| `apps/client` | Expo / React Native app. Offline-first: entries land in a local SQLite queue and sync when there's a connection. Solo mode by default. |
+| `apps/web` | **The milestone-1 client.** React + Vite PWA. Offline-first: entries land in the browser's IndexedDB and sync when there's a connection. Solo mode by default. |
+| `apps/client` | Expo / React Native app. Same loop, same local-first design on SQLite. **Parked** — kept in the tree, not the client being developed. |
 | `apps/clinician` | Next.js web app for a linked clinician. **Placeholder in milestone 1.** |
 
 The language model is used for two things only: reflective prompts and a post-hoc "why" explanation at the moment of a mismatch. It never computes or influences a number shown to the user. If you find a code path where it does, that's a bug.
 
 ## Running it
 
-Prerequisites: Node 20+, pnpm 9 (`corepack enable`), Docker (for the local Postgres used by tests), a Supabase project (free tier is fine), and an Expo account for EAS.
+Prerequisites: Node 20+, pnpm 9 (`corepack enable`), Docker (for the local Postgres used by tests), and a Supabase project (free tier is fine). The web client needs no Expo or EAS account; the parked Expo app does.
 
 ```sh
 cp .env.example .env         # fill in the values; see comments in the file
@@ -38,7 +39,7 @@ pnpm --filter @ledger/shared test
 docker compose up -d db      # local Postgres for tests + dev if you're not pointing at Supabase
 pnpm db:migrate
 pnpm dev:api
-pnpm dev:client              # Expo dev server; scan the QR code
+pnpm dev:web                 # http://localhost:5173
 ```
 
 ## Data handling

@@ -14,6 +14,7 @@
     "test:rls": "pnpm --filter @ledger/api test:rls",
     "lint": "pnpm -r lint",
     "dev:api": "pnpm --filter @ledger/api dev",
+    "dev:web": "pnpm --filter @ledger/web dev",
     "dev:client": "pnpm --filter @ledger/client start",
     "db:generate": "pnpm --filter @ledger/api db:generate",
     "db:migrate": "pnpm --filter @ledger/api db:migrate"
