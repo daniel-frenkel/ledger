@@ -21,3 +21,6 @@ Thumbs.db
 # local db artifacts
 *.sqlite
 *.sqlite-journal
+
+# Supabase root CA, fetched from the dashboard per-machine
+certs/

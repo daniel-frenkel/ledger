@@ -1,0 +1,327 @@
+/*
+ * The palette and metrics from apps/client/src/ui/index.tsx, ported to CSS.
+ * Plain on purpose: this is an index card, not a dashboard. There are no
+ * streaks, badges, or progress bars anywhere.
+ *
+ * No web fonts — nothing is fetched from a CDN. The system stack is what the
+ * reader already has, and it works with no network.
+ */
+
+:root {
+  --bg: #f7f6f2;
+  --card: #ffffff;
+  --text: #1c1b18;
+  --muted: #6b6a64;
+  --line: #e2e0d8;
+  --accent: #8a6a1f;
+  --danger: #b3261e;
+  --on-accent: #fff;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111214;
+    --card: #1b1c20;
+    --text: #eceae4;
+    --muted: #9a9890;
+    --line: #2c2d33;
+    --accent: #d8b36a;
+    --danger: #b3261e;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* --- layout --------------------------------------------------------------- */
+
+.screen {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 20px;
+  padding-bottom: calc(48px + env(safe-area-inset-bottom));
+}
+
+.screen--tabs {
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+}
+
+.tabs {
+  position: fixed;
+  inset: auto 0 0 0;
+  display: flex;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.tabs a {
+  flex: 1;
+  padding: 10px 4px;
+  text-align: center;
+  text-decoration: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.tabs a[aria-current='page'] {
+  color: var(--accent);
+}
+
+.tabs .glyph {
+  display: block;
+  font-size: 18px;
+  line-height: 1.4;
+}
+
+/* --- type ----------------------------------------------------------------- */
+
+h1.h1 {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  margin: 0 0 8px;
+}
+
+h2.h2 {
+  font-size: 19px;
+  font-weight: 600;
+  margin: 8px 0 6px;
+}
+
+p.p {
+  font-size: 16px;
+  line-height: 23px;
+  margin: 0 0 8px;
+}
+
+p.p--muted {
+  color: var(--muted);
+}
+
+p.p--strong {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+p.p--danger {
+  color: var(--danger);
+}
+
+.small {
+  display: block;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.accent {
+  color: var(--accent);
+}
+
+/* --- card ----------------------------------------------------------------- */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.card--loud {
+  border-color: var(--accent);
+  border-width: 2px;
+}
+
+a.card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+hr.divider {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 16px 0;
+}
+
+/* --- fields --------------------------------------------------------------- */
+
+.field {
+  margin-bottom: 16px;
+}
+
+.label {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+
+.hint {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 16px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--card);
+}
+
+textarea.input {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.input:focus-visible,
+.btn:focus-visible,
+.chip:focus-visible,
+.scale-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --- buttons -------------------------------------------------------------- */
+
+.btn {
+  display: block;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  margin-top: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: inherit;
+  text-align: center;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn:not(:disabled):active {
+  opacity: 0.8;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.btn--danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn--secondary {
+  border-color: var(--line);
+}
+
+.btn--link {
+  padding: 8px 16px;
+  color: var(--accent);
+}
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.btn-row .btn {
+  width: auto;
+  flex: 0 1 auto;
+}
+
+/* --- choice / scale ------------------------------------------------------- */
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+  font-size: 16px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.scale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.scale-btn {
+  min-width: 40px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-family: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.scale-btn[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* --- misc ----------------------------------------------------------------- */
+
+.notice {
+  margin-bottom: 12px;
+}
+
+.spacer {
+  height: 12px;
+}
