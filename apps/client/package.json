@@ -36,11 +36,14 @@
   "devDependencies": {
     "@babel/core": "^7.26.0",
     "@types/react": "~18.3.12",
+    "dotenv": "^16.4.7",
     "typescript": "^5.6.3"
   },
   "expo": {
     "install": {
-      "exclude": ["zod"]
+      "exclude": [
+        "zod"
+      ]
     }
   }
 }

@@ -2,8 +2,11 @@
  * The only place process.env is read. Validated at startup; the server
  * refuses to boot on a bad config rather than failing on the first request.
  */
-import 'dotenv/config';
 import { z } from 'zod';
+import { loadEnv } from './env.js';
+
+// The root .env, wherever this was launched from. Real env vars still win.
+loadEnv();
 
 const bool = z
   .string()

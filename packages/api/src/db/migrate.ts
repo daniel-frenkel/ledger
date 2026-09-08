@@ -3,12 +3,14 @@
  * Never run this as ledger_api. Used locally, in CI, and as a Render/Cloud Run
  * pre-deploy step.
  */
-import 'dotenv/config';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { loadEnv } from '../env.js';
+
+loadEnv();
 
 const url = process.env.DATABASE_MIGRATE_URL ?? process.env.DATABASE_URL;
 if (!url) throw new Error('DATABASE_MIGRATE_URL (or DATABASE_URL) is required');
