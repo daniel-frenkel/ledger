@@ -61,7 +61,12 @@ export type Config = z.infer<typeof schema>;
 let cached: Config | undefined;
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const parsed = schema.safeParse(env);
+  // An empty value means "not set". `.env.example` ships empty placeholders and
+  // step 5 of docs/NEXT-STEPS.md says to copy it, so `SUPABASE_JWT_SECRET=` with
+  // nothing after it has to mean the same as leaving the line out — otherwise
+  // zod validates "" against .min(16) / .url() and the server refuses to boot.
+  const present = Object.fromEntries(Object.entries(env).filter(([, v]) => v !== ''));
+  const parsed = schema.safeParse(present);
   if (!parsed.success) {
     // Print field names only — never values.
     const fields = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`);
