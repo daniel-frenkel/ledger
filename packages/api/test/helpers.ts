@@ -10,19 +10,38 @@ export const API_URL = process.env.DATABASE_URL ?? 'postgresql://ledger_api:ledg
  * These tests TRUNCATE every table. That is fine against a throwaway local
  * Postgres and catastrophic against a real one — and once a developer fills in
  * a root .env pointing at Supabase, `pnpm -r test` aims them straight at it.
- * So: refuse anything that is not obviously local unless someone says the
- * quiet part out loud with ALLOW_DESTRUCTIVE_TESTS=1.
+ *
+ * The override is deliberately not a boolean. `ALLOW_DESTRUCTIVE_TESTS=1` in a
+ * shell profile, a CI secret, or yesterday's terminal would silently authorise
+ * whatever database .env happens to name today. Naming the host instead makes
+ * the permission specific to one database: it cannot be set once and forgotten,
+ * and it does not follow a changed .env to a new target.
  */
-const LOOKS_LOCAL = /@(localhost|127\.0\.0\.1|\[::1\]|host\.docker\.internal|db)[:/]/;
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1', 'host.docker.internal', 'db']);
+
+/** The host a Postgres URL points at, or '' if it cannot be parsed. */
+export function databaseHost(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
+}
 
 export function assertDisposableDatabase(url: string = ADMIN_URL): void {
-  if (LOOKS_LOCAL.test(url) || process.env.ALLOW_DESTRUCTIVE_TESTS === '1') return;
+  const host = databaseHost(url);
+  if (LOCAL_HOSTS.has(host)) return;
+  if (host !== '' && process.env.ALLOW_DESTRUCTIVE_TESTS === host) return;
   throw new Error(
     [
-      'Refusing to TRUNCATE a database that is not local.',
-      'The API test suite wipes every table, and this connection points somewhere else.',
-      'Run it against the local Postgres (docker compose up -d db), or set',
-      'ALLOW_DESTRUCTIVE_TESTS=1 if you are certain the target is disposable.',
+      `Refusing to TRUNCATE the database at ${host || '(unparseable connection string)'}.`,
+      'This suite wipes every table, and that host is not local.',
+      'Run it against the local Postgres (docker compose up -d db), or, if that',
+      'database really is disposable, name it explicitly:',
+      '',
+      `    ALLOW_DESTRUCTIVE_TESTS=${host || '<host>'}`,
+      '',
+      'A bare "1" is not accepted: the permission has to name the database it grants.',
     ].join('\n'),
   );
 }
