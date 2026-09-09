@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { sources } from '../lib/markdown/sources';
+import { figureFiles, sources, sourcesIn } from '../lib/markdown/sources';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const APP = path.join(here, '..', '.next', 'server', 'app');
@@ -48,12 +48,12 @@ describe.skipIf(!built)('next build prerenders every route', () => {
     expect(missing).toEqual([]);
   });
 
-  it('prerenders all thirteen protocols, all eight floors and all four tools', () => {
+  it('prerenders all thirteen protocols, all eight floors and every tool', () => {
     const count = (dir: string) =>
       fs.existsSync(path.join(APP, dir)) ? fs.readdirSync(path.join(APP, dir)).filter((f) => f.endsWith('.html')).length : 0;
     expect(count('library/protocols')).toBe(13);
     expect(count('library/floors')).toBe(8);
-    expect(count('library/tools')).toBe(4);
+    expect(count('library/tools')).toBe(sourcesIn('tools').length);
   });
 
   it('put the documents into the HTML, not a loading state', () => {
@@ -87,7 +87,9 @@ describe.skipIf(!built)('next build prerenders every route', () => {
 
   it('copied every figure into public/theory', () => {
     const pub = path.join(here, '..', 'public', 'theory');
-    expect(fs.readdirSync(pub).filter((f) => f.endsWith('.png'))).toHaveLength(26);
+    const served = fs.readdirSync(pub).filter((f) => f.endsWith('.png')).sort();
+    // Every figure the sources have, and nothing invented.
+    expect(served).toEqual(figureFiles());
   });
 });
 
