@@ -8,7 +8,17 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import pg from 'pg';
-import { API_URL, ADMIN_URL, CLIENT_A, CLIENT_B, CLINICIAN, assertDisposableDatabase, truncateAll, uid } from './helpers.js';
+import {
+  API_URL,
+  ADMIN_URL,
+  CLIENT_A,
+  CLIENT_B,
+  CLINICIAN,
+  CLINICIAN_B,
+  assertDisposableDatabase,
+  truncateAll,
+  uid,
+} from './helpers.js';
 
 let api: pg.Client;
 let admin: pg.Client;
@@ -418,5 +428,332 @@ describe('regressions from review', () => {
     );
     const after = (await admin.query(`SELECT updated_at FROM predictions WHERE id = $1`, [PRED_A])).rows[0]!.updated_at as Date;
     expect(after.getTime()).toBeGreaterThan(before.getTime());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 0003 — invites, formulations, assistant runs
+//
+// The trust model these hold: the clinician originates an invite and the
+// client's redemption is the consent; the client can never see an invite;
+// consent stays the client's; and a formulation is the clinician's note that
+// nobody rewrites and nobody reads through a closed link.
+// ---------------------------------------------------------------------------
+
+describe('0003 invites and formulations', () => {
+  const INVITE = uid(801);
+  const INVITE_B = uid(802);
+  const FORM = uid(901);
+  const RUN = uid(951);
+  const NEW_LINK = uid(60);
+  const LINK_B = uid(71);
+
+  /** A 32-byte hash, distinct per seed number. */
+  const hash = (n: number) => Buffer.alloc(32, n);
+
+  beforeEach(async () => {
+    await admin.query(`INSERT INTO users (id, role) VALUES ($1,'clinician')`, [CLINICIAN_B]);
+  });
+
+  /** Insert an invite as the owner, bypassing RLS, with an explicit lifecycle. */
+  async function seedInvite(
+    id: string,
+    clinician: string,
+    n: number,
+    opts: { expired?: boolean; revoked?: boolean; redeemedBy?: string } = {},
+  ) {
+    await admin.query(
+      `INSERT INTO link_invites (id, clinician_id, token_hash, expires_at) VALUES ($1, $2, $3, now() + interval '7 days')`,
+      [id, clinician, hash(n)],
+    );
+    // The guard forces created_at and expires_at on insert, and refuses to let
+    // them move afterwards — which is the point of it. Ageing a fixture row is
+    // the one legitimate reason to step around it.
+    if (opts.expired) {
+      await admin.query(`ALTER TABLE link_invites DISABLE TRIGGER link_invites_guard`);
+      await admin.query(`UPDATE link_invites SET expires_at = now() - interval '1 hour' WHERE id = $1`, [id]);
+      await admin.query(`ALTER TABLE link_invites ENABLE TRIGGER link_invites_guard`);
+    }
+    if (opts.revoked) await admin.query(`UPDATE link_invites SET revoked_at = now() WHERE id = $1`, [id]);
+    if (opts.redeemedBy) {
+      await admin.query(`UPDATE link_invites SET redeemed_at = now(), redeemed_by = $2 WHERE id = $1`, [
+        id,
+        opts.redeemedBy,
+      ]);
+    }
+  }
+
+  // --- visibility ----------------------------------------------------------
+
+  it('#15 a clinician cannot read another clinician’s invites', async () => {
+    await seedInvite(INVITE, CLINICIAN, 1);
+    await seedInvite(INVITE_B, CLINICIAN_B, 2);
+    await as(CLINICIAN, 'clinician', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM link_invites`)).toBe(1);
+      expect(await count(c, `SELECT count(*) n FROM link_invites WHERE id = $1`, [INVITE_B])).toBe(0);
+    });
+  });
+
+  it('#16 a client cannot read link_invites at all, even holding the token hash', async () => {
+    await seedInvite(INVITE, CLINICIAN, 1);
+    await as(CLIENT_A, 'client', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM link_invites`)).toBe(0);
+      expect(await count(c, `SELECT count(*) n FROM link_invites WHERE token_hash = $1`, [hash(1)])).toBe(0);
+    });
+  });
+
+  it('#17 a client can neither insert an invite nor touch one', async () => {
+    await seedInvite(INVITE, CLINICIAN, 1);
+    await as(CLIENT_A, 'client', async (c) => {
+      await expect(
+        c.query(`INSERT INTO link_invites (id, clinician_id, token_hash, expires_at) VALUES ($1,$2,$3, now())`, [
+          uid(803),
+          CLINICIAN,
+          hash(9),
+        ]),
+      ).rejects.toThrow();
+    });
+    await as(CLIENT_A, 'client', async (c) => {
+      // Invisible, so there is nothing to update rather than a refusal.
+      const r = await c.query(`UPDATE link_invites SET revoked_at = now() WHERE id = $1`, [INVITE]);
+      expect(r.rowCount).toBe(0);
+    });
+  });
+
+  // --- redemption ----------------------------------------------------------
+
+  it('#18 a good token redeems once and creates an active link', async () => {
+    await seedInvite(INVITE, CLINICIAN, 1);
+    const link = await asCommit(CLIENT_A, 'client', async (c) => {
+      const r = await c.query(`SELECT redeem_invite($1, $2, true, false) AS link`, [hash(1), NEW_LINK]);
+      return r.rows[0]?.link as string | null;
+    });
+    expect(link).toBe(NEW_LINK);
+    const row = (await admin.query(`SELECT * FROM clinician_client_links WHERE id = $1`, [NEW_LINK])).rows[0]!;
+    expect(row.status).toBe('active');
+    expect(row.client_id).toBe(CLIENT_A);
+    expect(row.clinician_id).toBe(CLINICIAN);
+    expect(row.share_predictions).toBe(true);
+    expect(row.share_body_states).toBe(false);
+    expect(row.consented_at).not.toBeNull();
+    const inv = (await admin.query(`SELECT * FROM link_invites WHERE id = $1`, [INVITE])).rows[0]!;
+    expect(inv.redeemed_by).toBe(CLIENT_A);
+    expect(inv.link_id).toBe(NEW_LINK);
+  });
+
+  it('#19 used, expired, revoked, unknown and self tokens all fail identically', async () => {
+    await seedInvite(uid(811), CLINICIAN, 11, { redeemedBy: CLIENT_B });
+    await seedInvite(uid(812), CLINICIAN, 12, { expired: true });
+    await seedInvite(uid(813), CLINICIAN, 13, { revoked: true });
+    await seedInvite(uid(814), CLINICIAN, 14);
+
+    const attempt = (who: string, role: 'client' | 'clinician', h: Buffer, linkId: string) =>
+      asCommit(who, role, async (c) => {
+        const r = await c.query(`SELECT redeem_invite($1, $2, true, true) AS link`, [h, linkId]);
+        return r.rows[0]?.link as string | null;
+      });
+
+    // Every one returns NULL — the same answer, so nothing distinguishes
+    // "no such token" from "already used".
+    expect(await attempt(CLIENT_A, 'client', hash(11), uid(61))).toBeNull(); // used
+    expect(await attempt(CLIENT_A, 'client', hash(12), uid(62))).toBeNull(); // expired
+    expect(await attempt(CLIENT_A, 'client', hash(13), uid(63))).toBeNull(); // revoked
+    expect(await attempt(CLIENT_A, 'client', hash(99), uid(64))).toBeNull(); // unknown
+    expect(await attempt(CLINICIAN, 'client', hash(14), uid(65))).toBeNull(); // self
+
+    expect(await count(admin, `SELECT count(*) n FROM clinician_client_links`)).toBe(0);
+  });
+
+  it('#20 a token cannot be redeemed twice', async () => {
+    await seedInvite(INVITE, CLINICIAN, 1);
+    const first = await asCommit(
+      CLIENT_A,
+      'client',
+      async (c) => (await c.query(`SELECT redeem_invite($1, $2, false, false) AS link`, [hash(1), NEW_LINK])).rows[0]?.link,
+    );
+    expect(first).toBe(NEW_LINK);
+    const second = await asCommit(
+      CLIENT_B,
+      'client',
+      async (c) => (await c.query(`SELECT redeem_invite($1, $2, false, false) AS link`, [hash(1), uid(66)])).rows[0]?.link,
+    );
+    expect(second).toBeNull();
+    expect(await count(admin, `SELECT count(*) n FROM clinician_client_links`)).toBe(1);
+  });
+
+  it('#21 a clinician cannot redeem, even someone else’s invite', async () => {
+    await seedInvite(INVITE, CLINICIAN_B, 1);
+    const out = await asCommit(
+      CLINICIAN,
+      'clinician',
+      async (c) => (await c.query(`SELECT redeem_invite($1, $2, true, true) AS link`, [hash(1), NEW_LINK])).rows[0]?.link,
+    );
+    expect(out).toBeNull();
+  });
+
+  // --- consent stays the client's -----------------------------------------
+
+  it('#22 a clinician cannot set share flags on their own link', async () => {
+    await linkActive();
+    await as(CLINICIAN, 'clinician', async (c) => {
+      await expect(
+        c.query(`UPDATE clinician_client_links SET share_predictions = true WHERE id = $1`, [LINK]),
+      ).rejects.toThrow(/only the client can change what is shared/);
+    });
+    await as(CLINICIAN, 'clinician', async (c) => {
+      await expect(
+        c.query(`UPDATE clinician_client_links SET share_body_states = true WHERE id = $1`, [LINK]),
+      ).rejects.toThrow(/only the client can change what is shared/);
+    });
+  });
+
+  it('#23 a clinician may revoke their own link and change nothing else', async () => {
+    await linkActive();
+    await asCommit(CLINICIAN, 'clinician', (c) =>
+      c.query(`UPDATE clinician_client_links SET status = 'revoked' WHERE id = $1`, [LINK]),
+    );
+    const row = (await admin.query(`SELECT * FROM clinician_client_links WHERE id = $1`, [LINK])).rows[0]!;
+    expect(row.status).toBe('revoked');
+    expect(row.revoked_at).not.toBeNull();
+
+    // A second, untouched link: the clinician may not move anything else on it.
+    await admin.query(
+      `INSERT INTO clinician_client_links (id, clinician_id, client_id, status, requested_by, consented_at)
+       VALUES ($1, $2, $3, 'active', 'clinician', now())`,
+      [LINK_B, CLINICIAN, CLIENT_B],
+    );
+    await as(CLINICIAN, 'clinician', async (c) => {
+      await expect(
+        c.query(`UPDATE clinician_client_links SET consented_at = now() - interval '1 day' WHERE id = $1`, [LINK_B]),
+      ).rejects.toThrow(/a clinician may only revoke a link/);
+    });
+    await as(CLINICIAN, 'clinician', async (c) => {
+      await expect(
+        c.query(`UPDATE clinician_client_links SET requested_by = 'client' WHERE id = $1`, [LINK_B]),
+      ).rejects.toThrow(/a clinician may only revoke a link/);
+    });
+  });
+
+  it('#24 the client keeps their ledger when the link is revoked', async () => {
+    await linkActive({ predictions: true });
+    await asCommit(CLIENT_A, 'client', (c) =>
+      c.query(`UPDATE clinician_client_links SET status = 'revoked' WHERE id = $1`, [LINK]),
+    );
+    await as(CLIENT_A, 'client', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM predictions WHERE user_id = $1`, [CLIENT_A])).toBe(1);
+    });
+  });
+
+  // --- formulations --------------------------------------------------------
+
+  /** A formulation for CLIENT_A, inserted as the clinician, through RLS. */
+  const insertFormulation = (c: pg.Client, id = FORM, version = 1) =>
+    c.query(
+      `INSERT INTO formulations (id, clinician_id, client_id, link_id, version, note_enc, falsify_enc, observations, gates, floor)
+       VALUES ($1, $2, $3, $4, $5, '\\x00', '\\x00', '[0,3]'::jsonb, '{"risk":true,"dial":true,"calibrated":true}'::jsonb, 4)`,
+      [id, CLINICIAN, CLIENT_A, LINK, version],
+    );
+
+  it('#25 a clinician writes and reads a formulation through an active link', async () => {
+    await linkActive();
+    await asCommit(CLINICIAN, 'clinician', (c) => insertFormulation(c));
+    await as(CLINICIAN, 'clinician', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM formulations`)).toBe(1);
+    });
+  });
+
+  it('#26 a formulation cannot be written without an active link', async () => {
+    await linkActive();
+    await admin.query(`UPDATE clinician_client_links SET status = 'revoked' WHERE id = $1`, [LINK]);
+    await as(CLINICIAN, 'clinician', async (c) => {
+      await expect(insertFormulation(c)).rejects.toThrow();
+    });
+  });
+
+  it('#27 a clinician cannot update or delete a formulation', async () => {
+    await linkActive();
+    await asCommit(CLINICIAN, 'clinician', (c) => insertFormulation(c));
+    await as(CLINICIAN, 'clinician', async (c) => {
+      // No grant, and no policy either. Two locks, both checked.
+      await expect(c.query(`UPDATE formulations SET floor = 7 WHERE id = $1`, [FORM])).rejects.toThrow();
+    });
+    await as(CLINICIAN, 'clinician', async (c) => {
+      await expect(c.query(`DELETE FROM formulations WHERE id = $1`, [FORM])).rejects.toThrow();
+    });
+    expect(await count(admin, `SELECT count(*) n FROM formulations WHERE floor = 4`)).toBe(1);
+  });
+
+  it('#28 a clinician cannot read formulations for a client whose link is revoked', async () => {
+    await linkActive();
+    await asCommit(CLINICIAN, 'clinician', (c) => insertFormulation(c));
+    await admin.query(`UPDATE clinician_client_links SET status = 'revoked' WHERE id = $1`, [LINK]);
+    await as(CLINICIAN, 'clinician', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM formulations`)).toBe(0);
+    });
+    // The door closed; the row did not move.
+    expect(await count(admin, `SELECT count(*) n FROM formulations`)).toBe(1);
+  });
+
+  it('#29 a clinician cannot read another clinician’s formulation for the same client', async () => {
+    await linkActive();
+    await asCommit(CLINICIAN, 'clinician', (c) => insertFormulation(c));
+    await admin.query(
+      `INSERT INTO clinician_client_links (id, clinician_id, client_id, status, requested_by, consented_at)
+       VALUES ($1, $2, $3, 'active', 'clinician', now())`,
+      [uid(70), CLINICIAN_B, CLIENT_A],
+    );
+    await as(CLINICIAN_B, 'clinician', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM formulations`)).toBe(0);
+    });
+  });
+
+  it('#30 the client cannot read formulations about themselves in this version', async () => {
+    await linkActive();
+    await asCommit(CLINICIAN, 'clinician', (c) => insertFormulation(c));
+    await as(CLIENT_A, 'client', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM formulations`)).toBe(0);
+    });
+  });
+
+  it('#31 versions are unique per pair, so a re-aim cannot collide', async () => {
+    await linkActive();
+    await asCommit(CLINICIAN, 'clinician', (c) => insertFormulation(c, FORM, 1));
+    await as(CLINICIAN, 'clinician', async (c) => {
+      await expect(insertFormulation(c, uid(902), 1)).rejects.toThrow();
+    });
+    await asCommit(CLINICIAN, 'clinician', (c) => insertFormulation(c, uid(903), 2));
+    expect(await count(admin, `SELECT count(*) n FROM formulations`)).toBe(2);
+  });
+
+  it('#32 a formulation needs all three gate attestations present', async () => {
+    await linkActive();
+    await as(CLINICIAN, 'clinician', async (c) => {
+      await expect(
+        c.query(
+          `INSERT INTO formulations (id, clinician_id, client_id, link_id, version, note_enc, falsify_enc, gates, floor)
+           VALUES ($1, $2, $3, $4, 1, '\\x00', '\\x00', '{"risk":true,"dial":true}'::jsonb, 4)`,
+          [uid(904), CLINICIAN, CLIENT_A, LINK],
+        ),
+      ).rejects.toThrow();
+    });
+  });
+
+  // --- assistant runs ------------------------------------------------------
+
+  it('#33 assistant runs are readable only by their author, and never updated', async () => {
+    await linkActive();
+    await asCommit(CLINICIAN, 'clinician', (c) =>
+      c.query(
+        `INSERT INTO assistant_runs (id, clinician_id, client_id, note_sha256, model, latency_ms)
+         VALUES ($1, $2, $3, $4, 'test-model', 12)`,
+        [RUN, CLINICIAN, CLIENT_A, hash(7)],
+      ),
+    );
+    await as(CLINICIAN_B, 'clinician', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM assistant_runs`)).toBe(0);
+    });
+    await as(CLINICIAN, 'clinician', async (c) => {
+      await expect(c.query(`UPDATE assistant_runs SET model = 'x' WHERE id = $1`, [RUN])).rejects.toThrow();
+    });
   });
 });

@@ -20,6 +20,8 @@ import {
   customType,
   foreignKey,
   index,
+  integer,
+  jsonb,
   real,
   pgEnum,
   pgTable,
@@ -382,6 +384,136 @@ export const devices = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.id] })],
 );
 
+// ---------------------------------------------------------------------------
+// link_invites — how a link comes into existence (migration 0003)
+// ---------------------------------------------------------------------------
+
+/**
+ * The clinician originates; the client consents by redeeming.
+ *
+ * `tokenHash` is the SHA-256 of a 32-byte token. The token itself is never
+ * stored and is returned exactly once, in the response that creates the
+ * invite. It travels in a URL fragment so it never reaches a server log, a
+ * referrer header, or a proxy.
+ *
+ * Clients have no RLS visibility here at all — redemption goes through the
+ * SECURITY DEFINER function `redeem_invite`.
+ */
+export const linkInvites = pgTable(
+  'link_invites',
+  {
+    id: uuid('id').primaryKey(),
+    clinicianId: uuid('clinician_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: bytea('token_hash').notNull(),
+    createdAt: ts('created_at').notNull().defaultNow(),
+    // created_at + 7 days, forced by the link_invites_guard trigger.
+    expiresAt: ts('expires_at').notNull(),
+    redeemedAt: ts('redeemed_at'),
+    redeemedBy: uuid('redeemed_by').references(() => users.id, { onDelete: 'set null' }),
+    linkId: uuid('link_id').references(() => clinicianClientLinks.id, { onDelete: 'set null' }),
+    revokedAt: ts('revoked_at'),
+  },
+  (t) => [
+    unique('link_invites_token_hash_unique').on(t.tokenHash),
+    index('link_invites_clinician_open_idx').on(t.clinicianId),
+    check('link_invites_token_hash_len', sql`octet_length(${t.tokenHash}) = 32`),
+    check('link_invites_redeem_pair', sql`(${t.redeemedAt} IS NULL) = (${t.redeemedBy} IS NULL)`),
+    check('link_invites_not_self', sql`${t.redeemedBy} IS NULL OR ${t.redeemedBy} <> ${t.clinicianId}`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// assistant_runs — what the locating assistant was asked, never what it read
+// ---------------------------------------------------------------------------
+
+/**
+ * A record that a run happened. The note is PHI and is not here: only its
+ * SHA-256, so two runs on the same note can be recognised as the same note.
+ * No evidence spans either — those are verbatim quotes from the note.
+ */
+export const assistantRuns = pgTable(
+  'assistant_runs',
+  {
+    id: uuid('id').primaryKey(),
+    clinicianId: uuid('clinician_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    noteSha256: bytea('note_sha256').notNull(),
+    observationIds: jsonb('observation_ids').notNull().default(sql`'[]'::jsonb`),
+    model: text('model').notNull(),
+    latencyMs: integer('latency_ms').notNull(),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    check('assistant_runs_note_sha256_len', sql`octet_length(${t.noteSha256}) = 32`),
+    check('assistant_runs_not_self', sql`${t.clinicianId} <> ${t.clientId}`),
+    check('assistant_runs_observation_ids_array', sql`jsonb_typeof(${t.observationIds}) = 'array'`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// formulations — where the locator's output lives
+// ---------------------------------------------------------------------------
+
+/**
+ * The clinician's working note about a client, the way a paper chart is.
+ * Append-only: a re-aim is a new row at `version + 1`, never an edit, and the
+ * API role holds no UPDATE or DELETE grant. The client does not read these in
+ * this version — see docs/data-path.md.
+ */
+export const formulations = pgTable(
+  'formulations',
+  {
+    id: uuid('id').primaryKey(),
+    clinicianId: uuid('clinician_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    linkId: uuid('link_id')
+      .notNull()
+      .references(() => clinicianClientLinks.id, { onDelete: 'cascade' }),
+    // 1 first, +1 per re-aim. "Re-aim N of 2" is rendered from this, and at 3
+    // the formulation itself goes on trial.
+    version: smallint('version').notNull(),
+    noteEnc: bytea('note_enc').notNull(),
+    // What the clinician says would show this placement wrong. Required.
+    falsifyEnc: bytea('falsify_enc').notNull(),
+    keyVersion: smallint('key_version').notNull().default(1),
+    // Observation ids only, validated against @ledger/shared before insert.
+    observations: jsonb('observations').notNull().default(sql`'[]'::jsonb`),
+    // { risk, dial, calibrated } — the clinician's attestation, never the
+    // assistant's.
+    gates: jsonb('gates').notNull(),
+    floor: smallint('floor').notNull(),
+    protocolSlug: text('protocol_slug'),
+    assistantRunId: uuid('assistant_run_id').references(() => assistantRuns.id, { onDelete: 'set null' }),
+    createdAt: ts('created_at').notNull().defaultNow(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [
+    unique('formulations_version_unique').on(t.clinicianId, t.clientId, t.version),
+    index('formulations_pair_idx').on(t.clinicianId, t.clientId, t.version),
+    check('formulations_version_positive', sql`${t.version} >= 1`),
+    check('formulations_floor_range', sql`${t.floor} BETWEEN 1 AND 8`),
+    check('formulations_not_self', sql`${t.clinicianId} <> ${t.clientId}`),
+    check('formulations_observations_array', sql`jsonb_typeof(${t.observations}) = 'array'`),
+    check(
+      'formulations_gates_shape',
+      sql`jsonb_typeof(${t.gates}) = 'object'
+        AND jsonb_typeof(${t.gates} -> 'risk') = 'boolean'
+        AND jsonb_typeof(${t.gates} -> 'dial') = 'boolean'
+        AND jsonb_typeof(${t.gates} -> 'calibrated') = 'boolean'`,
+    ),
+  ],
+);
+
 export type UserRow = typeof users.$inferSelect;
 export type PredictionRow = typeof predictions.$inferSelect;
 export type BodyStateRow = typeof bodyStates.$inferSelect;
@@ -391,3 +523,6 @@ export type JournalEntryRow = typeof journalEntries.$inferSelect;
 export type CrisisEventRow = typeof crisisEvents.$inferSelect;
 export type LinkRow = typeof clinicianClientLinks.$inferSelect;
 export type DeviceRow = typeof devices.$inferSelect;
+export type LinkInviteRow = typeof linkInvites.$inferSelect;
+export type FormulationRow = typeof formulations.$inferSelect;
+export type AssistantRunRow = typeof assistantRuns.$inferSelect;
