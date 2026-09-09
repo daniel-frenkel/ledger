@@ -684,3 +684,256 @@ g.floor:focus-visible .fl-body {
   outline: 2px solid var(--brass);
   outline-offset: 2px;
 }
+
+/* --- rendered source documents -------------------------------------------- */
+
+/*
+ * Everything below styles HTML produced by lib/markdown from the files in
+ * docs/theory. The documents are long and phase-structured, so the page is a
+ * two-column reading layout: the document, and a contents column that sticks.
+ */
+
+.doc {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 15rem;
+  gap: 2.5rem;
+  align-items: start;
+}
+@media (max-width: 62rem) {
+  .doc {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.toc {
+  position: sticky;
+  top: 1.5rem;
+  border-left: 1px solid var(--rule);
+  padding-left: 1rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  max-height: calc(100vh - 3rem);
+  overflow-y: auto;
+}
+@media (max-width: 62rem) {
+  .toc {
+    position: static;
+    max-height: none;
+    border-left: 0;
+    border-top: 1px solid var(--rule);
+    padding: 1rem 0 0;
+    margin-bottom: 1.5rem;
+  }
+}
+.toc .eyebrow {
+  margin-bottom: 0.6rem;
+}
+.toc ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.toc li {
+  margin: 0 0 0.45rem;
+}
+.toc a {
+  color: var(--slate);
+  text-decoration: none;
+}
+.toc a:hover {
+  color: var(--brass);
+  text-decoration: underline;
+}
+
+.prose {
+  max-width: 46rem;
+}
+.prose > *:first-child {
+  margin-top: 0;
+}
+.prose li {
+  margin: 0 0 0.5rem;
+  max-width: 46rem;
+}
+.prose ul,
+.prose ol {
+  padding-left: 1.25rem;
+}
+.prose hr {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 2rem 0;
+}
+.prose img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.5rem 0 0.5rem;
+  border: 1px solid var(--rule);
+  background: #fff;
+}
+.prose blockquote {
+  margin: 1.25rem 0;
+  padding-left: 1rem;
+  border-left: 3px solid var(--rule);
+  color: var(--slate);
+}
+.prose pre {
+  overflow-x: auto;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  padding: 1rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+.prose code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+}
+.prose .tablewrap table {
+  min-width: 34rem;
+}
+/* The document's own H1 is dropped; its H2s are the page's section heads. */
+.prose h2 {
+  scroll-margin-top: 1.5rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--rule-soft);
+}
+.prose h3 {
+  scroll-margin-top: 1.5rem;
+}
+
+/* Obsidian callout types, beyond the two the app already had. */
+.callout.info,
+.callout.abstract {
+  border-left-color: var(--brass);
+  background: var(--brass-soft);
+}
+.callout.todo {
+  border-left-color: var(--rule);
+  background: var(--paper-2);
+}
+.callout.caution,
+.callout.danger {
+  border-left-color: var(--iron);
+  background: var(--iron-soft);
+}
+.callout b.c-title {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  display: block;
+  margin: 0 0 0.5rem;
+  font-weight: 500;
+}
+
+/* The label that separates a clinical note from a protocol. */
+.kind {
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--brass);
+  border: 1px solid var(--rule);
+  background: var(--paper-2);
+  padding: 0.2rem 0.5rem;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.kind.note {
+  color: var(--iron);
+}
+
+/* Citation tiers from the verification ledger. */
+.tier {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  color: var(--slate);
+  border: 1px solid var(--rule);
+  padding: 0.1rem 0.35rem;
+  white-space: nowrap;
+}
+.tier.unverified {
+  color: var(--iron);
+  border-color: var(--iron);
+  background: var(--iron-soft);
+}
+
+/* The protocols index: a list of documents, each with its own one-line summary. */
+.protolist {
+  list-style: none;
+  margin: 2rem 0 0;
+  padding: 0;
+}
+.protolist > li {
+  border-top: 1px solid var(--rule);
+  padding: 1.25rem 0 0.5rem;
+}
+.protohead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.protohead h2 {
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+.protohead h2 a {
+  text-decoration: none;
+  color: var(--ink);
+}
+.protohead h2 a:hover {
+  color: var(--brass);
+}
+.protolist .meta {
+  margin: 0.2rem 0 0.6rem;
+}
+.protolist .prose p:last-child {
+  margin-bottom: 0.75rem;
+}
+
+.titlerow {
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+.titlerow h1 {
+  margin-bottom: 0.25rem;
+}
+
+/* The floor note sits below the locator block, under its own heading. */
+h2.notehead {
+  border-top: 1px solid var(--ink);
+  padding-top: 0.75rem;
+  margin-top: 2.5rem;
+}
+
+/* The references list: name, tier or the unverified mark, and who cites it. */
+.reflist {
+  list-style: none;
+  margin: 0 0 2rem;
+  padding: 0;
+  max-width: 52rem;
+}
+.reflist li {
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+.reflist li:last-child {
+  border-bottom: 0;
+}
+.refname {
+  flex: 1 1 22rem;
+}

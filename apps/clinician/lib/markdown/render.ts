@@ -155,6 +155,25 @@ function rehypeHeadingIds() {
   };
 }
 
+/**
+ * Wrap tables so a wide one scrolls inside its own box instead of stretching
+ * the page. The Pin targets tables are three columns of prose.
+ */
+function rehypeWrapTables() {
+  return (tree: HRoot) => {
+    visit(tree, 'element', (node: Element, index, parent) => {
+      if (node.tagName !== 'table' || !parent || index === undefined) return;
+      if (parent.type === 'element' && parent.tagName === 'div') return;
+      parent.children[index] = {
+        type: 'element',
+        tagName: 'div',
+        properties: { className: ['tablewrap'] },
+        children: [node],
+      };
+    });
+  };
+}
+
 /** H2s, matching the ids rehypeHeadingIds assigns. */
 function tableOfContents(md: string): { id: string; text: string }[] {
   const seen = new Map<string, number>();
@@ -182,6 +201,7 @@ const processor = unified()
   .use(remarkCallouts)
   .use(remarkRehype)
   .use(rehypeHeadingIds)
+  .use(rehypeWrapTables)
   .use(rehypeStringify);
 
 /**

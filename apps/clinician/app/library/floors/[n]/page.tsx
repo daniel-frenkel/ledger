@@ -1,10 +1,13 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { FLOOR_CONTENT, floor } from '@/content/floors';
-import { protocolByTitle } from '@/content/protocols';
+import { protoTitlesForFloor, protocolByTitle } from '@/content/protocols';
 import { modalitiesForFloor } from '@/content/modalities';
 import { citeLabel } from '@/content/references';
-import { AwaitingAuthor, Inline } from '@/lib/inline';
+import { Inline } from '@/lib/inline';
+import { floorSource } from '@/lib/markdown/sources';
+import { render } from '@/lib/markdown/render';
+import { Contents, DocBody } from '@/lib/doc';
 
 export function generateStaticParams() {
   return FLOOR_CONTENT.map((f) => ({ n: String(f.n) }));
@@ -16,6 +19,10 @@ export default async function FloorPage({ params }: { params: Promise<{ n: strin
   if (!f) notFound();
 
   const modalities = modalitiesForFloor(f.n);
+  // The floor's own note. Its H1 repeats the page title, so it is dropped.
+  const doc = floorSource(f.n);
+  const out = doc ? render(doc, { dropTitle: true }) : null;
+  const protos = protoTitlesForFloor(f.n);
 
   return (
     <main>
@@ -39,11 +46,11 @@ export default async function FloorPage({ params }: { params: Promise<{ n: strin
         <div className="rrow">
           <dt>Protocols</dt>
           <dd>
-            {f.proto.length === 0 ? (
+            {protos.length === 0 ? (
               <span className="meta">None. No upper-floor tool reaches it.</span>
             ) : (
               <div className="chips">
-                {f.proto.map((title) => {
+                {protos.map((title) => {
                   const p = protocolByTitle(title);
                   return p ? (
                     <Link className="chip route" key={title} href={`/library/protocols/${p.slug}`}>
@@ -92,8 +99,13 @@ export default async function FloorPage({ params }: { params: Promise<{ n: strin
         {f.warningCondition ? <p className="meta">{f.warningCondition}</p> : null}
       </div>
 
-      <h2>The floor note</h2>
-      <AwaitingAuthor what="the floor's own note is not in the sources" />
+      <h2 className="notehead">The floor note</h2>
+      {out ? (
+        <div className="doc">
+          <DocBody html={out.html} />
+          <Contents toc={out.toc} label="In the floor note" />
+        </div>
+      ) : null}
 
       <p className="cites">{citeLabel(f.cites)}</p>
     </main>

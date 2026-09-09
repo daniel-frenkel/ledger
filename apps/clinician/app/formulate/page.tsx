@@ -227,6 +227,10 @@ export default function FormulatePage() {
           </div>
 
           <p className="foot">{LOCATOR_DISCLAIMER}</p>
+          <p className="foot">
+            Built from the{' '}
+            <Link href="/library/tools/decision-aid-locating-the-floor">Decision Aid</Link>.
+          </p>
         </div>
       </div>
     </main>
