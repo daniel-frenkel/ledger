@@ -51,7 +51,7 @@ export async function truncateAll(): Promise<void> {
   const c = new pg.Client({ connectionString: ADMIN_URL });
   await c.connect();
   await c.query(
-    'TRUNCATE prediction_priors, crisis_events, journal_entries, reinterpretations, body_states, predictions, priors, clinician_client_links, devices, users CASCADE',
+    'TRUNCATE formulations, assistant_runs, link_invites, prediction_priors, crisis_events, journal_entries, reinterpretations, body_states, predictions, priors, clinician_client_links, devices, users CASCADE',
   );
   await c.end();
 }
@@ -60,6 +60,7 @@ export const uid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(
 export const CLIENT_A = uid(1);
 export const CLIENT_B = uid(2);
 export const CLINICIAN = uid(3);
+export const CLINICIAN_B = uid(4);
 export const DEVICE_A = uid(10);
 
 export class LogSink extends Writable {
