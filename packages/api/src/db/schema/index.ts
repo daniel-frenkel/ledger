@@ -506,10 +506,12 @@ export const formulations = pgTable(
     check('formulations_observations_array', sql`jsonb_typeof(${t.observations}) = 'array'`),
     check(
       'formulations_gates_shape',
+      // coalesce is load-bearing: `-> 'key'` on a missing key is SQL NULL,
+      // jsonb_typeof(NULL) is NULL, and a CHECK evaluating to NULL PASSES.
       sql`jsonb_typeof(${t.gates}) = 'object'
-        AND jsonb_typeof(${t.gates} -> 'risk') = 'boolean'
-        AND jsonb_typeof(${t.gates} -> 'dial') = 'boolean'
-        AND jsonb_typeof(${t.gates} -> 'calibrated') = 'boolean'`,
+        AND coalesce(jsonb_typeof(${t.gates} -> 'risk'), '') = 'boolean'
+        AND coalesce(jsonb_typeof(${t.gates} -> 'dial'), '') = 'boolean'
+        AND coalesce(jsonb_typeof(${t.gates} -> 'calibrated'), '') = 'boolean'`,
     ),
   ],
 );

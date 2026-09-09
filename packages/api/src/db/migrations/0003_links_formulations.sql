@@ -105,11 +105,17 @@ CREATE TABLE "formulations" (
 	CONSTRAINT "formulations_observations_array" CHECK (jsonb_typeof("observations") = 'array'),
 	-- All three gates, present and boolean. A formulation without an
 	-- attestation is not a formulation.
+	--
+	-- coalesce is load-bearing: `gates -> 'calibrated'` on a missing key is SQL
+	-- NULL, jsonb_typeof(NULL) is NULL, and a CHECK that evaluates to NULL
+	-- PASSES — only FALSE fails. Without it this constraint accepts a
+	-- formulation that attests two of the three gates, which is exactly what
+	-- it exists to refuse.
 	CONSTRAINT "formulations_gates_shape" CHECK (
 		jsonb_typeof("gates") = 'object'
-		AND jsonb_typeof("gates" -> 'risk') = 'boolean'
-		AND jsonb_typeof("gates" -> 'dial') = 'boolean'
-		AND jsonb_typeof("gates" -> 'calibrated') = 'boolean'
+		AND coalesce(jsonb_typeof("gates" -> 'risk'), '') = 'boolean'
+		AND coalesce(jsonb_typeof("gates" -> 'dial'), '') = 'boolean'
+		AND coalesce(jsonb_typeof("gates" -> 'calibrated'), '') = 'boolean'
 	)
 );
 --> statement-breakpoint
