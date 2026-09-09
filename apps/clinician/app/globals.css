@@ -1,0 +1,686 @@
+/*
+ * The clinician app's design system, taken from docs/design/floor-locator.html.
+ *
+ * Light theme, forced. `color-scheme: light` on the root, no
+ * prefers-color-scheme queries, no dark tokens. These pages are read in a
+ * consulting room on a laptop; the reference file commits to one rendering and
+ * so do we.
+ */
+
+:root {
+  color-scheme: light;
+  --paper: #f2f4f3;
+  --paper-2: #e9edea;
+  --ink: #191d1b;
+  --slate: #4a5551;
+  --rule: #cdd4d0;
+  --rule-soft: #dfe4e1;
+  --brass: #7e5f17;
+  --brass-soft: #f0e7cf;
+  --iron: #9e3325;
+  --iron-soft: #f3e0dc;
+  --display: var(--font-newsreader), Georgia, serif;
+  --body: var(--font-plex-sans), -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: var(--font-plex-mono), ui-monospace, Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.shell {
+  max-width: 74rem;
+  margin: 0 auto;
+  padding: 0 1.5rem 4rem;
+}
+
+/* --- masthead ------------------------------------------------------------- */
+
+header.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1.5rem 0 1rem;
+  border-bottom: 1px solid var(--ink);
+}
+
+.wm {
+  font-family: var(--display);
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
+}
+.wm span {
+  color: var(--brass);
+}
+.wm a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.crumb {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--slate);
+  margin: 0;
+}
+.crumb a {
+  color: inherit;
+}
+
+nav.tabs {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+nav.tabs a {
+  color: var(--slate);
+  text-decoration: none;
+}
+nav.tabs a:hover,
+nav.tabs a[aria-current='page'] {
+  color: var(--brass);
+}
+
+/* --- type ----------------------------------------------------------------- */
+
+h1 {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 2rem;
+  letter-spacing: -0.02em;
+  margin: 2rem 0 0.5rem;
+}
+h2 {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 1.5rem;
+  letter-spacing: -0.015em;
+  margin: 2.25rem 0 0.4rem;
+}
+h3 {
+  font-family: var(--display);
+  font-size: 1.25rem;
+  font-weight: 500;
+  margin: 1.75rem 0 0.4rem;
+}
+h4 {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--slate);
+  margin: 1.5rem 0 0.5rem;
+  font-weight: 500;
+}
+
+p {
+  margin: 0 0 0.9rem;
+  max-width: 46rem;
+}
+.standfirst {
+  color: var(--slate);
+  font-size: 1.02rem;
+  max-width: 42rem;
+}
+.sub {
+  color: var(--slate);
+  font-size: 0.92rem;
+  margin: 0 0 1.25rem;
+  max-width: 38rem;
+}
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--brass);
+  margin: 0 0 0.75rem;
+}
+.meta {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--slate);
+}
+
+a {
+  color: var(--brass);
+}
+
+/* --- index cards ---------------------------------------------------------- */
+
+.cards {
+  display: grid;
+  gap: 1rem;
+  padding: 0;
+  margin: 1.5rem 0 0;
+  list-style: none;
+}
+@media (min-width: 44rem) {
+  .cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (min-width: 66rem) {
+  .cards.cards--3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+.card {
+  border: 1px solid var(--rule);
+  background: var(--paper-2);
+  padding: 1rem 1.1rem;
+}
+.card a {
+  text-decoration: none;
+  color: inherit;
+}
+.card h3 {
+  margin: 0 0 0.3rem;
+  font-size: 1.1rem;
+}
+.card p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--slate);
+}
+.card .n {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--brass);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+/* --- data rows ------------------------------------------------------------ */
+
+.rrow {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.35rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+@media (min-width: 40rem) {
+  .rrow {
+    grid-template-columns: 11rem 1fr;
+    gap: 1.25rem;
+  }
+}
+.rrow:last-of-type {
+  border-bottom: 0;
+}
+.rrow dt {
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--slate);
+  padding-top: 0.2em;
+}
+.rrow dd {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.chip {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  border: 1px solid var(--rule);
+  padding: 0.2rem 0.55rem;
+  background: var(--paper);
+  text-decoration: none;
+  color: var(--ink);
+}
+.chip.route {
+  border-color: var(--brass);
+  color: var(--brass);
+}
+
+/* --- tables --------------------------------------------------------------- */
+
+.tablewrap {
+  overflow-x: auto;
+  margin: 1rem 0 1.5rem;
+  border: 1px solid var(--rule);
+  background: var(--paper-2);
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 46rem;
+  font-size: 0.9rem;
+}
+th,
+td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--rule-soft);
+}
+th {
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--slate);
+  border-bottom: 1px solid var(--rule);
+  font-weight: 500;
+  white-space: nowrap;
+}
+tr:last-child td {
+  border-bottom: 0;
+}
+/* The failure column is the point of the exercise; give it the room. */
+td.fails {
+  min-width: 22rem;
+  color: var(--ink);
+}
+td.floorcell {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+/* --- callouts and notices ------------------------------------------------- */
+
+.callout {
+  margin: 1.25rem 0;
+  padding: 0.95rem 1.1rem;
+  border-left: 3px solid var(--brass);
+  background: var(--brass-soft);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  max-width: 52rem;
+}
+.callout.warning {
+  border-left-color: var(--iron);
+  background: var(--iron-soft);
+}
+.callout.note {
+  border-left-color: var(--rule);
+  background: var(--paper-2);
+}
+.callout .c-title {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+.callout p:last-child {
+  margin-bottom: 0;
+}
+
+.awaiting {
+  border: 1px dashed var(--rule);
+  background: var(--paper-2);
+  padding: 0.85rem 1rem;
+  color: var(--slate);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  max-width: 46rem;
+}
+
+.placeholder {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border: 1px solid var(--rule);
+  color: var(--slate);
+  padding: 0.15rem 0.5rem;
+}
+
+.foot {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.85rem;
+  color: var(--slate);
+  max-width: 46rem;
+}
+
+.cites {
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  color: var(--slate);
+  text-transform: uppercase;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
+
+/* ===========================================================================
+ * Formulate — the locator, ported from docs/design/floor-locator.html.
+ * ========================================================================= */
+
+.case {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  padding: 1.1rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.case .who {
+  font-family: var(--display);
+  font-size: 1.35rem;
+  font-weight: 500;
+  margin: 0;
+}
+
+/* --- gates ---------------------------------------------------------------- */
+
+.gates {
+  padding: 1.75rem 0 1.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+.gate-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+@media (min-width: 52rem) {
+  .gate-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+.gate {
+  border: 1px solid var(--rule);
+  background: var(--paper-2);
+  padding: 0.9rem 1rem;
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+.gate.cleared {
+  border-color: var(--brass);
+}
+.gate.blocked {
+  border-color: var(--iron);
+  background: var(--iron-soft);
+}
+.gate input {
+  margin-top: 0.3rem;
+  accent-color: var(--brass);
+  flex: 0 0 auto;
+}
+.gate label {
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.gate .g-name {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+.gate .g-note {
+  display: block;
+  color: var(--slate);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.gate-msg {
+  margin: 1rem 0 0;
+  padding: 0.85rem 1rem;
+  border-left: 3px solid var(--iron);
+  background: var(--iron-soft);
+  font-size: 0.9rem;
+  color: var(--ink);
+  max-width: 46rem;
+}
+
+/* --- the building --------------------------------------------------------- */
+
+.work {
+  display: grid;
+  gap: 2.5rem;
+  padding-top: 2rem;
+}
+/*
+ * The building is sticky ONLY in the two-column layout. Making it sticky in
+ * the single-column layout was the overlap bug in the prototype's first cut:
+ * it pins itself over the observations as they scroll past underneath.
+ */
+.buildingwrap {
+  max-width: 17rem;
+  margin: 0 auto;
+}
+@media (min-width: 62rem) {
+  .work {
+    grid-template-columns: 19rem 1fr;
+    gap: 3rem;
+    align-items: start;
+  }
+  .buildingwrap {
+    position: sticky;
+    top: 1.5rem;
+    max-width: none;
+    margin: 0;
+  }
+}
+svg.building {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.fl-body {
+  fill: var(--paper-2);
+  stroke: var(--rule);
+  stroke-width: 1;
+  transition: fill 0.2s ease, stroke 0.2s ease;
+}
+.fl-num {
+  font-family: var(--mono);
+  font-size: 9px;
+  fill: var(--slate);
+}
+.fl-label {
+  font-family: var(--body);
+  font-size: 10.5px;
+  fill: var(--ink);
+}
+.win {
+  fill: var(--rule);
+}
+g.floor {
+  cursor: pointer;
+}
+g.floor.lit .fl-body {
+  fill: var(--brass-soft);
+  stroke: var(--brass);
+}
+g.floor.lit .fl-num,
+g.floor.lit .fl-label {
+  fill: var(--brass);
+  font-weight: 600;
+}
+g.floor.lit .win {
+  fill: var(--brass);
+}
+g.floor.sel .fl-body {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+g.floor.sel .fl-label {
+  fill: var(--ink);
+  font-weight: 600;
+}
+g.floor:focus {
+  outline: none;
+}
+g.floor:focus-visible .fl-body {
+  stroke: var(--brass);
+  stroke-width: 2.5;
+}
+.ground {
+  fill: var(--rule-soft);
+  stroke: var(--rule);
+  cursor: pointer;
+}
+.ground:focus {
+  outline: none;
+}
+.ground:focus-visible {
+  stroke: var(--brass);
+  stroke-width: 2.5;
+}
+.ground.lit {
+  fill: var(--brass-soft);
+  stroke: var(--brass);
+}
+.b-cap {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--slate);
+  text-align: center;
+  margin: 0.75rem 0 0;
+  line-height: 1.5;
+}
+
+/* --- observations --------------------------------------------------------- */
+
+.obs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+.obs li {
+  border-bottom: 1px solid var(--rule-soft);
+}
+.obs label {
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+  padding: 0.8rem 0.25rem;
+  cursor: pointer;
+}
+.obs input {
+  margin-top: 0.35rem;
+  accent-color: var(--brass);
+  flex: 0 0 auto;
+}
+.obs .q {
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+.obs .tag {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--slate);
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding-top: 0.3rem;
+  white-space: nowrap;
+}
+.obs li.on .q {
+  font-weight: 500;
+}
+.obs li.on .tag {
+  color: var(--brass);
+}
+
+/* --- result --------------------------------------------------------------- */
+
+.result {
+  margin-top: 2rem;
+  border: 1px solid var(--ink);
+  background: var(--paper-2);
+}
+.result-head {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.result-head h3 {
+  font-family: var(--display);
+  font-size: 1.25rem;
+  font-weight: 500;
+  margin: 0;
+}
+.result-head .n {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--slate);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.result-body {
+  padding: 1.25rem;
+}
+.warn {
+  margin: 1rem 1.25rem 1.25rem;
+  padding: 0.85rem 1rem;
+  border-left: 3px solid var(--brass);
+  background: var(--brass-soft);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0 1.25rem 0.75rem;
+}
+.btn {
+  font-family: var(--body);
+  font-size: 0.88rem;
+  font-weight: 500;
+  padding: 0.55rem 1rem;
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--ink);
+  cursor: pointer;
+}
+.btn.ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--rule);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.btn:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}

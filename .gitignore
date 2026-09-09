@@ -24,3 +24,6 @@ Thumbs.db
 
 # Supabase root CA, fetched from the dashboard per-machine
 certs/
+
+# Next.js
+.next/
