@@ -117,7 +117,7 @@ cd ..\..
 pnpm install
 ```
 
-**Check:** in Supabase → Table Editor you see `predictions`, `priors`, `body_states`, `reinterpretations`, `journal_entries`, `crisis_events`, `clinician_client_links`, `devices`, `users`, and the `predictions` table has `exit_forecast` and `exit_actual` columns.
+**Check:** in Supabase → Table Editor you see `predictions`, `priors`, `body_states`, `reinterpretations`, `journal_entries`, `crisis_events`, `clinician_client_links`, `devices`, `users`, and the `predictions` table has `exit_forecast` and `exit_actual` columns. Every one of them should be **empty** — a row here at this stage is left over from a test run, not yours.
 
 Optional but recommended — prove RLS is live on the real database.
 
@@ -127,13 +127,20 @@ fine; against Supabase it deletes everything you have. Because of that they
 refuse to run on a non-local database unless you say so explicitly:
 
 ```powershell
-$env:ALLOW_DESTRUCTIVE_TESTS=1; pnpm test:rls
+$env:ALLOW_DESTRUCTIVE_TESTS="<the host from DATABASE_MIGRATE_URL>"; pnpm test:rls
 ```
 
+The override has to **name the host** it is permitting — for a Supabase pooler
+that is something like `aws-0-us-east-2.pooler.supabase.com`. A bare `1` is
+refused on purpose: a boolean left in a shell profile or a CI secret would keep
+authorising whatever database `.env` names next week, whereas a hostname stops
+being true the moment the target changes. Run it and the refusal message tells
+you the exact value to use.
+
 Expected: `24 passed`. **Do this now, while the database is empty, and not
-again once it holds entries you care about.** Without that variable the suites
-stop with "Refusing to TRUNCATE a database that is not local", which is also
-why a plain `pnpm -r test` is safe to run at any time after this point.
+again once it holds entries you care about** — the suite truncates every table.
+Without the variable the suites stop with "Refusing to TRUNCATE the database at
+…", which is also why a plain `pnpm -r test` is safe to run from here on.
 
 ---
 
@@ -194,9 +201,16 @@ also allowed on `localhost`.
 
 ## Step 10 — Sign in
 
-Enter your email → **Send me a code** → check your email for a 6-digit code → enter it → **Sign in**.
+Enter your email → **Send me a code** → check your email for the code → enter it → **Sign in**. (Supabase's OTP length is configurable; six and eight digits are both normal.)
 
-**Check:** you land on the **Open** screen with "Up to date." at the top. In Supabase → Table Editor → `users`, there is one row with your UUID and role `client`. No email is stored there — that's correct.
+**Check:** you land on the **Open** screen with "Up to date." at the top. Then, in the Supabase **SQL Editor**, confirm the account is yours and not a fixture:
+
+```sql
+select u.id, u.role, u.id = (select id from auth.users) as is_my_account
+from users u;
+```
+
+One row, `role` = `client`, `is_my_account` = `true`. No email column exists — that's correct; identity lives in Supabase Auth, never in the app database.
 
 ---
 
@@ -213,8 +227,32 @@ can toggle the network without touching the machine.
 5. Set the dropdown back to **No throttling**. The status line moves to
    *"Syncing…"* and then *"Up to date."*
 
-**Check:** in Supabase → Table Editor → `predictions`, one row. `situation_enc`
-is bytes, not readable text; `confidence` and `outcome_verdict` are readable.
+**Check:** a row count proves nothing — a leftover test fixture is also "one
+row", and one has fooled this check before. Check for the values *you* typed.
+In the Supabase **SQL Editor**:
+
+```sql
+select p.confidence,
+       p.exit_forecast,
+       p.outcome_verdict,
+       p.user_id = (select id from auth.users)   as is_my_account,
+       octet_length(p.situation_enc)             as situation_bytes,
+       left(encode(p.situation_enc, 'hex'), 16)  as ciphertext_prefix
+from predictions p;
+```
+
+All five have to hold:
+
+- `confidence` is **the number you moved the scale to** — not 80 unless you chose 80
+- `exit_forecast` is **the exit you picked**, or `null` if you skipped it
+- `outcome_verdict` is **the verdict you chose** when you resolved it
+- `is_my_account` is `true`
+- `situation_bytes` is non-zero and `ciphertext_prefix` starts `01` — the envelope
+  version byte from `packages/api/src/crypto`. It is ciphertext, not your words.
+
+The last one is the point of the whole design: the numbers a clinician needs are
+queryable, and the sentences you wrote are unreadable from a database dump.
+
 That is the milestone.
 
 ---

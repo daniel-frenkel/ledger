@@ -8,7 +8,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import pg from 'pg';
-import { API_URL, ADMIN_URL, CLIENT_A, CLIENT_B, CLINICIAN, truncateAll, uid } from './helpers.js';
+import { API_URL, ADMIN_URL, CLIENT_A, CLIENT_B, CLINICIAN, assertDisposableDatabase, truncateAll, uid } from './helpers.js';
 
 let api: pg.Client;
 let admin: pg.Client;
@@ -49,6 +49,10 @@ async function asCommit<T>(userId: string, role: 'client' | 'clinician', fn: (c:
 const count = async (c: pg.Client, sql: string, params: unknown[] = []) => Number((await c.query(sql, params)).rows[0]?.n ?? 0);
 
 beforeAll(async () => {
+  // Checked again here, before a connection is even opened: this suite
+  // truncates and re-seeds on every test, and truncateAll() is not the only
+  // way it writes. Failing early keeps the refusal legible.
+  assertDisposableDatabase();
   api = new pg.Client({ connectionString: API_URL });
   admin = new pg.Client({ connectionString: ADMIN_URL });
   await api.connect();
