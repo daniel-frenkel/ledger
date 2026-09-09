@@ -52,3 +52,40 @@ A client will be able to delete their account. That soft-deletes their `users` r
 Before any real client uses this: a signed BAA with Supabase (available on paid tiers) and with the hosting provider; the same for Sentry if it's kept in production; a written privacy notice; and a decision about whether the Anthropic call is inside or outside the covered-entity boundary (Anthropic offers a BAA for eligible customers; confirm before enabling the feature for anyone but yourself).
 
 **A transactional email provider is required before any real client signs in.** Supabase's built-in email service is explicitly not for production: it is rate-limited, best-effort, and refuses to deliver to any address that is not a member of the project's team, so no client could receive a sign-in code from it. A real sender — Resend or Postmark — is therefore a prerequisite, not an optimisation. Note what that adds: the provider becomes a **data processor handling client email addresses**, alongside Supabase Auth, which is the other place identity lives. The messages themselves carry only a six-digit sign-in code and no PHI, but the association between an email address and this application is itself disclosure, so the provider belongs in the same BAA and privacy-notice conversation as Supabase and the hosting provider. Gmail SMTP with an app password is adequate for a developer testing against their own address and is **not** an answer for deployment: consumer deliverability is unreliable and the sending account is a personal one.
+
+## Known advisories — accepted, 9 September 2026
+
+Dependabot reports 43 open advisories against this repository. The ones that
+could be fixed cleanly were fixed on 9 September 2026. The rest are recorded
+here as decisions rather than left to be re-reported every time someone looks,
+because none of them is going to move on its own.
+
+**The Expo tree in `apps/client` — roughly 29 of the 43. Accepted risk while
+that package is parked.** `tar`, `@xmldom/xmldom`, `uuid`, `decode-uri-component`
+and one of the `esbuild` findings are reachable only through `@expo/cli` and
+`@expo/metro-config` — the Expo command-line tooling, which runs on a developer's
+machine and is not part of any deployed artefact. `apps/client` is parked, not
+shipped: it is not built, not deployed, and not the milestone-1 client
+(`apps/web` is). Clearing them requires an Expo major, which is a migration, not
+a bump. **If `apps/client` is ever unparked, this paragraph expires and the Expo
+upgrade becomes a prerequisite, not an option.**
+
+**`image-size` — two high findings, no fix exists.** Both are denial of service
+through infinite loops in the ICNS and JXL/HEIF parsers. There is no patched
+version at any release; the advisories name none. It arrives through Expo and
+metro, so it shares the paragraph above.
+
+**`postcss` — four findings, pinned upstream by Next.** Next.js depends on
+`postcss` at an exact version, `8.4.31`, and still does as of 16.3.4, so no Next
+release fixes this and there is nothing to upgrade to. The findings concern
+`sourceMappingURL` handling reading arbitrary `.map` files, which requires
+attacker-controlled CSS; the CSS processed here is written in this repository.
+Build-time only.
+
+**`esbuild` — one low finding, pinned upstream by tsup.** `tsup` 8.5.1 is the
+latest release and depends on `esbuild ^0.27.0`; the fix is 0.28.1, outside that
+range. The advisory affects `esbuild --serve` on Windows, which `tsup` never
+invokes.
+
+**Still open, and not accepted:** `@opentelemetry/core` reaches the API at
+runtime through `@sentry/node`. See the Sentry notes in that package.
