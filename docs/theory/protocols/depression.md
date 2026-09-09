@@ -229,7 +229,7 @@ not failure. Close by reviewing the baseline numbers as the story of the treatme
 
 | Lead | For | Status |
 |---|---|---|
-| Kube et al. 2019, *Psychological Medicine* | cognitive immunization; expectation persistence — Phase 4's named opponent | **PINNED** |
+| Kube et al. 2019, *Psychological Medicine* | cognitive immunization; expectation persistence — Phase 4's named opponent | **SUPPORTIVE — not settled.** Two experimental studies (2019); a 2024 replication from the same group failed on one manipulation. Cite as evidence for the move, not proof of it. |
 | Swann et al. 1992, *J. Abnormal Psychology* | allure of negative feedback — the provoke move in depression | **PINNED** |
 | Jacobson et al. 1996 component analysis; Martell/Dimidjian BA | Phase 4's chassis | unpinned |
 | Lewinsohn, behavioral model of depression | the shutdown loop | unpinned |

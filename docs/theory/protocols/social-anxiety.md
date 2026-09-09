@@ -302,7 +302,7 @@ contact sampling, the armor count — as the story of the treatment.
 |---|---|---|
 | Salkovskis 1991, behaviour in the maintenance of anxiety | safety behaviors as the disconfirmation blocker — the chassis claim | **PINNED** metadata (PDF in ILL transit) |
 | Craske et al. 2014, *Behaviour Research and Therapy* | expectancy violation — Phase 4's design rules | **PINNED** |
-| Kube et al. 2019, *Psychological Medicine* | cognitive immunization — the reinterpret move | **PINNED** |
+| Kube et al. 2019, *Psychological Medicine* | cognitive immunization — the reinterpret move | **SUPPORTIVE — not settled.** Two experimental studies (2019); a 2024 replication from the same group failed on one manipulation. Cite as evidence for the move, not proof of it. |
 | Swann & Read 1981; Swann et al. 1992 | self-verification — confirming audiences sought; the provoke move | **PINNED** |
 | Joiner & Metalsky 2001 | reassurance-seeking — the provoke move's social form | **PINNED** |
 | Clark & Wells 1995 (in Heimberg et al., *Social Phobia*) | self-focused attention; the observer-perspective image; the cognitive model | unpinned |

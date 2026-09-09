@@ -286,7 +286,7 @@ window — as the story of the treatment.
 
 | Lead | For | Status |
 |---|---|---|
-| Kube et al. 2019, *Psychological Medicine* | immunization — the reinterpret move | **PINNED** |
+| Kube et al. 2019, *Psychological Medicine* | immunization — the reinterpret move | **SUPPORTIVE — not settled.** Two experimental studies (2019); a 2024 replication from the same group failed on one manipulation. Cite as evidence for the move, not proof of it. |
 | Joiner & Metalsky 2001 | reassurance-seeking — the provoke move's social form | **PINNED** |
 | Sleep block (Riemann 2023; Espie; Harvey) | Phase 5 | **PINNED** (ledger) |
 | Craske et al. 2014 | expectancy-violation design rules | **PINNED** |

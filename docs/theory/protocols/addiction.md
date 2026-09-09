@@ -269,7 +269,7 @@ witnessed crests, the repatriated map — as the story of the treatment.
 | Lead | For | Status |
 |---|---|---|
 | Craske et al. 2014 | expectancy violation — the cue-exposure design rules | **PINNED** |
-| Kube et al. 2019 | expectation persistence — the reinterpret move | **PINNED** |
+| Kube et al. 2019 | expectation persistence — the reinterpret move | **SUPPORTIVE — not settled.** Two experimental studies (2019); a 2024 replication from the same group failed on one manipulation. Cite as evidence for the move, not proof of it. |
 | Joiner | acquired capability — the risk assessment's frame | **PINNED** |
 | Sleep block (Riemann; Espie; Harvey) | the quartermaster claim; the junior module | **PINNED** (ledger) |
 | Berridge & Robinson | incentive sensitization — the wanting/liking split | unpinned |

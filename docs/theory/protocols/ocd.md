@@ -298,7 +298,7 @@ day, the accommodation census — as the story of the treatment.
 | Lead | For | Status |
 |---|---|---|
 | Craske et al. 2014, *Behaviour Research and Therapy* | expectancy violation — Phase 4's design rules | **PINNED** |
-| Kube et al. 2019, *Psychological Medicine* | immunization — the reinterpret move | **PINNED** |
+| Kube et al. 2019, *Psychological Medicine* | immunization — the reinterpret move | **SUPPORTIVE — not settled.** Two experimental studies (2019); a 2024 replication from the same group failed on one manipulation. Cite as evidence for the move, not proof of it. |
 | Salkovskis 1991 | safety behaviors blocking disconfirmation — response prevention's logic | **PINNED** metadata (PDF via ILL) |
 | Sleep block (Riemann 2023; Espie; Harvey) | Phase 5 | **PINNED** (ledger) |
 | Rachman & de Silva 1978 | intrusion normality — the founding datum, Phase 2's demonstration | unpinned |

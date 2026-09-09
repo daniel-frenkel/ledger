@@ -293,7 +293,7 @@ as the story of the treatment.
 | Espie et al. 2006, attention–intention–effort | the effort paradox — the distinctive claim | **PINNED** (ledger) |
 | Harvey, cognitive model of insomnia | the daytime forecast; monitoring; misperception | **PINNED** (ledger) |
 | Riemann et al. 2023, European insomnia guideline | CBT-I as first line; the component evidence | **PINNED** (ledger) |
-| Kube et al. 2019 | immunization — the reinterpret move | **PINNED** |
+| Kube et al. 2019 | immunization — the reinterpret move | **SUPPORTIVE — not settled.** Two experimental studies (2019); a 2024 replication from the same group failed on one manipulation. Cite as evidence for the move, not proof of it. |
 | Craske et al. 2014 | expectancy-violation design rules | **PINNED** |
 | Spielman et al. 1987 | 3P model; sleep restriction's origin | unpinned |
 | Bootzin 1972 | stimulus control — Phase 4's first engine | unpinned |
