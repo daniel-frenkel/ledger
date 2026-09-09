@@ -57,7 +57,25 @@ export interface SourceDoc {
   href: string | null;
   /** Floors 1–8 only. */
   floor?: number;
+  /** The frontmatter `status` line, where the document has one. */
+  status?: string;
+  /**
+   * The document says it is a draft. Drafts do not route and are not part of
+   * the corpus — see isDraft.
+   */
+  draft: boolean;
 }
+
+/**
+ * A document is a draft when its frontmatter `status` begins with "DRAFT".
+ *
+ * The author marks unfinished work that way, and unfinished work must not
+ * reach a clinician: it gets no route, and corpus() leaves it out, so the
+ * reference assistant cannot quote from it either. The check is on the
+ * document's own declaration rather than on a list kept here, so marking a
+ * file draft is a one-line edit to the file and nothing else.
+ */
+export const isDraft = (status: string | undefined): boolean => /^\s*DRAFT\b/i.test(status ?? '');
 
 const readTitle = (body: string, fallback: string): string => {
   const m = /^#\s+(.+)$/m.exec(body);
@@ -119,20 +137,45 @@ export function sources(): SourceDoc[] {
       const title = typeof data['title'] === 'string' ? data['title'] : readTitle(content, name);
       const subtitle = typeof data['subtitle'] === 'string' ? data['subtitle'] : undefined;
       const frontType = typeof data['type'] === 'string' ? data['type'] : undefined;
+      const status = typeof data['status'] === 'string' ? data['status'] : undefined;
+      const draft = isDraft(status);
+      const placed = route(file, name, frontType);
       return {
         file,
         name,
         title,
         ...(subtitle ? { subtitle } : {}),
+        ...(status ? { status } : {}),
         aliases: asStrings(data['aliases']),
         body: content,
-        ...route(file, name, frontType),
+        draft,
+        ...placed,
+        // A draft keeps its kind — it is still a tool, still a protocol — and
+        // loses only its route.
+        href: draft ? null : placed.href,
       };
     });
   return cache;
 }
 
-export const sourcesIn = (dir: string): SourceDoc[] => sources().filter((d) => d.file.startsWith(`${dir}/`));
+/**
+ * The documents a reader — or the reference assistant — may be shown.
+ *
+ * Everything except drafts. Use this anywhere a document's *content* is about
+ * to be surfaced; use sources() only where the full set matters, such as
+ * resolving a wikilink or checking that a draft is correctly excluded.
+ */
+export const corpus = (): SourceDoc[] => sources().filter((d) => !d.draft);
+
+export const drafts = (): SourceDoc[] => sources().filter((d) => d.draft);
+
+/** Publishable documents under a directory. Drafts are not included. */
+export const sourcesIn = (dir: string): SourceDoc[] =>
+  corpus().filter((d) => d.file.startsWith(`${dir}/`));
+
+/** Every document under a directory, drafts included. */
+export const allSourcesIn = (dir: string): SourceDoc[] =>
+  sources().filter((d) => d.file.startsWith(`${dir}/`));
 
 export const sourceByFile = (file: string): SourceDoc | undefined => sources().find((d) => d.file === file);
 

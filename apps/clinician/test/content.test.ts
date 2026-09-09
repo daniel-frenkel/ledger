@@ -224,12 +224,33 @@ describe('observations', () => {
       expect(everyTime!.source).toBe('aid');
     });
 
-    it('does not carry a sign the Aid gives no floor to', () => {
-      // "The reaction too big for the occasion" routes relatively — "the floor
-      // where a high-precision prior just got contradicted" — so there is no
-      // floor to weight without choosing one. Open question, not an omission.
-      expect(aid).toContain(normalise('The reaction too big for the occasion'));
-      for (const o of OBSERVATIONS) expect(o.q).not.toContain('too big for the occasion');
+    it('scores the sign the Aid routes relatively, at a weight marked as ours', () => {
+      // "The reaction too big for the occasion" points at "the floor where a
+      // high-precision prior just got contradicted" — the same claim the
+      // prototype's first sign makes, so it takes that sign's shape at half
+      // weight. The wording is the Aid's; the weight is not, and the source
+      // file says so.
+      expect(aid).toContain(unmark('The reaction too big for the occasion'));
+      const flare = AID_OBSERVATIONS.find((o) => o.q.startsWith('The reaction too big'));
+      expect(flare).toBeDefined();
+      expect(flare!.w).toEqual({ 6: 1, 7: 1, 3: -1 });
+      expect(flare!.tag).toBe('6 · 7');
+      expect(flare!.source).toBe('aid');
+    });
+
+    it('halves the sign it was derived from, so the two cannot double-count', () => {
+      const derivedFrom = LOCATOR_OBSERVATIONS[0]!;
+      const flare = AID_OBSERVATIONS.find((o) => o.q.startsWith('The reaction too big'))!;
+      expect(Object.keys(flare.w).sort()).toEqual(Object.keys(derivedFrom.w).sort());
+      for (const f of Object.keys(flare.w)) expect(flare.w[f]! * 2, `floor ${f}`).toBe(derivedFrom.w[f]);
+    });
+
+    it('records in the source file that the weight is not the author’s', () => {
+      // The one number in this file that no source document states. If the
+      // flag goes, so does the reader's only warning.
+      const src = read('apps/clinician/content/observations.ts');
+      expect(src).toMatch(/THE WEIGHT IS THE DESIGNER'S, NOT THE AUTHOR'S/);
+      expect(src).toMatch(/flagged for the author's review/);
     });
   });
 
