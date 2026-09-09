@@ -37,6 +37,16 @@ export const GATES: readonly Gate[] = z.array(gateSchema).parse([
 
 export const GATES_EYEBROW = 'Gates — clear these before locating anything';
 
+/**
+ * Shown under gate 3. The environment is asked about twice on purpose, and
+ * without saying so it reads as a duplicate: the Decision Aid's Step 0 checks
+ * the field *before* the floor logic runs at all, and the floor-8 observation
+ * is what routes a case to the substrate once it is running. Different jobs,
+ * same question.
+ */
+export const GATE_3_FOOTNOTE =
+  'Asked twice on purpose. Here it decides whether to enter the floor logic at all; the floor-8 sign below decides where a case that entered it belongs.';
+
 /** Shown while any gate is open. The locator bolds the first sentence. */
 export const GATE_BLOCKED = {
   lead: 'Locating is off until the gates clear.',
@@ -50,24 +60,62 @@ export const observationSchema = z.object({
   w: z.record(z.string(), z.number()),
   /** The floors this sign points at, as the locator labels it. */
   tag: z.string().min(1),
+  /**
+   * Which document this sign comes from. The prototype and the Decision Aid
+   * do not carry the same list, and the difference is worth keeping visible:
+   * test/content.test.ts checks each set against its own source.
+   */
+  source: z.enum(['locator', 'aid']),
+  /** The rest of the source's sentence, where it has one. */
+  note: z.string().optional(),
 });
 export type Observation = z.infer<typeof observationSchema>;
 
-export const OBSERVATIONS: readonly Observation[] = z.array(observationSchema).parse([
+/** The nine in docs/design/floor-locator.html, verbatim and in its order. */
+export const LOCATOR_OBSERVATIONS: readonly Observation[] = z.array(observationSchema).parse([
   {
     q: 'They can state the belief and argue against it themselves, accurately, and it doesn’t move.',
     w: { 6: 2, 7: 2, 3: -2 },
     tag: '6 · 7',
+    source: 'locator',
   },
-  { q: 'The reaction arrives before the thought does.', w: { 6: 2, 7: 1 }, tag: '6' },
-  { q: 'A body signal is being read as information about the world.', w: { 7: 3 }, tag: '7' },
-  { q: 'It shows up in the room, with you, on schedule.', w: { 4: 3 }, tag: '4' },
-  { q: 'It runs without a decision — they notice only afterward.', w: { 5: 3 }, tag: '5' },
-  { q: 'The environment is doing the damage right now, not only historically.', w: { 8: 4 }, tag: '8' },
-  { q: 'The trouble is how they hold their thinking, not what it says.', w: { 2: 3 }, tag: '2' },
-  { q: 'One coherent account of who they are organises everything else.', w: { 1: 3 }, tag: '1' },
-  { q: 'They have never actually tested it — the situation is avoided.', w: { 5: 2, 3: 1 }, tag: '5 · 3' },
+  { q: 'The reaction arrives before the thought does.', w: { 6: 2, 7: 1 }, tag: '6', source: 'locator' },
+  { q: 'A body signal is being read as information about the world.', w: { 7: 3 }, tag: '7', source: 'locator' },
+  { q: 'It shows up in the room, with you, on schedule.', w: { 4: 3 }, tag: '4', source: 'locator' },
+  { q: 'It runs without a decision — they notice only afterward.', w: { 5: 3 }, tag: '5', source: 'locator' },
+  { q: 'The environment is doing the damage right now, not only historically.', w: { 8: 4 }, tag: '8', source: 'locator' },
+  { q: 'The trouble is how they hold their thinking, not what it says.', w: { 2: 3 }, tag: '2', source: 'locator' },
+  { q: 'One coherent account of who they are organises everything else.', w: { 1: 3 }, tag: '1', source: 'locator' },
+  { q: 'They have never actually tested it — the situation is avoided.', w: { 5: 2, 3: 1 }, tag: '5 · 3', source: 'locator' },
 ]);
+
+/**
+ * Signs the Decision Aid carries that the prototype does not.
+ *
+ * docs/theory/tools/decision-aid-locating-the-floor.md is the locator's source
+ * document, and its Step 1 list and the prototype's OBS array had drifted
+ * apart. This closes the half of that gap that can be closed without deciding
+ * anything: the Aid names a floor here, so the weight goes where the Aid puts
+ * it, at 3 — the same weight every other single-floor sign carries.
+ *
+ * The Aid's other missing sign, "The reaction too big for the occasion", is
+ * deliberately absent. It routes *relatively* — "points straight at the floor
+ * where a high-precision prior just got contradicted" — so there is no floor
+ * to weight without choosing one, and choosing one is a clinical decision
+ * rather than a porting decision. It is in the report as an open question.
+ */
+export const AID_OBSERVATIONS: readonly Observation[] = z.array(observationSchema).parse([
+  {
+    q: 'The every-time pattern — reproduces across partners, jobs, decades, indifferent to circumstance.',
+    w: { 4: 3 },
+    tag: '4',
+    source: 'aid',
+    note: 'A relational template, not a floor-3 belief about the current situation.',
+  },
+]);
+
+/** What the locator scores against: the prototype's nine, then the Aid's. */
+export const OBSERVATIONS: readonly Observation[] = [...LOCATOR_OBSERVATIONS, ...AID_OBSERVATIONS];
 
 export const OBSERVATIONS_HEADING = 'What are you seeing?';
 export const OBSERVATIONS_SUB =

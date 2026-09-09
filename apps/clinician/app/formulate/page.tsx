@@ -3,9 +3,14 @@
 /**
  * Locating the floor — ported from docs/design/floor-locator.html.
  *
- * Same gates, same nine signs and weights, same scoring (top floor lit; any
- * floor at 60% of the top also lit), same warnings and the same order of
- * precedence between them, same keyboard handling on the floors and the ground.
+ * Same gates, same weights, same scoring (top floor lit; any floor at 60% of
+ * the top also lit), same warnings and the same order of precedence between
+ * them, same keyboard handling on the floors and the ground.
+ *
+ * The sign list is no longer only the prototype's nine. The Decision Aid is
+ * the locator's source document and its Step 1 list had drifted from the
+ * prototype's OBS array; content/observations.ts now keeps both sets, tagged
+ * by which document they came from.
  *
  * Stateless this pass: nothing is saved, no client is loaded, and the case
  * header is a labelled placeholder. Persistence and the re-aim counter come
@@ -24,6 +29,7 @@ import {
   BUILDING_CAPTION,
   GATES,
   GATES_EYEBROW,
+  GATE_3_FOOTNOTE,
   GATE_BLOCKED,
   LOCATOR_DISCLAIMER,
   NO_FLOOR_TITLE,
@@ -86,6 +92,7 @@ export default function FormulatePage() {
               <label htmlFor={g.id}>
                 <span className="g-name">{g.name}</span>
                 <span className="g-note">{g.note}</span>
+                {g.id === 'g3' ? <span className="g-twice">{GATE_3_FOOTNOTE}</span> : null}
               </label>
             </div>
           ))}
@@ -159,7 +166,10 @@ export default function FormulatePage() {
               <li key={i} className={ticked.includes(i) ? 'on' : ''}>
                 <label>
                   <input type="checkbox" checked={ticked.includes(i)} onChange={() => toggleObs(i)} />
-                  <span className="q">{o.q}</span>
+                  <span className="q">
+                    {o.q}
+                    {o.note ? <span className="o-note">{o.note}</span> : null}
+                  </span>
                   <span className="tag">{o.tag}</span>
                 </label>
               </li>
