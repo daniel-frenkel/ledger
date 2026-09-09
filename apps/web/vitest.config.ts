@@ -14,7 +14,7 @@ export default defineConfig({
   resolve: { alias: { '@': path.resolve(here, 'src') } },
   test: {
     environment: 'node',
-    include: ['test/**/*.test.ts'],
+    include: ['test/**/*.test.ts', 'test/**/*.test.tsx'],
     setupFiles: ['./test/setup.ts'],
   },
 });
