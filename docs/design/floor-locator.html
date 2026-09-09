@@ -1,0 +1,385 @@
+<title>Locating the Floor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    color-scheme: light;
+    --paper:#F2F4F3; --paper-2:#E9EDEA; --ink:#191D1B; --slate:#4A5551;
+    --rule:#CDD4D0; --rule-soft:#DFE4E1;
+    --brass:#7E5F17; --brass-soft:#F0E7CF;
+    --iron:#9E3325; --iron-soft:#F3E0DC;
+    --display:"Newsreader",Georgia,serif;
+    --body:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .shell{max-width:74rem;margin:0 auto;padding:0 1.5rem 4rem}
+
+  header.top{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;flex-wrap:wrap;
+    padding:1.5rem 0 1rem;border-bottom:1px solid var(--ink)}
+  .wm{font-family:var(--display);font-size:1.25rem;font-weight:600;margin:0}
+  .wm span{color:var(--brass)}
+  .crumb{font-family:var(--mono);font-size:0.68rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--slate)}
+
+  .case{display:flex;gap:1.5rem;flex-wrap:wrap;align-items:baseline;padding:1.1rem 0;border-bottom:1px solid var(--rule)}
+  .case .who{font-family:var(--display);font-size:1.35rem;font-weight:500;margin:0}
+  .case .meta{font-family:var(--mono);font-size:0.72rem;color:var(--slate)}
+  .case .reaim{font-family:var(--mono);font-size:0.68rem;text-transform:uppercase;letter-spacing:0.1em;
+    border:1px solid var(--brass);color:var(--brass);padding:0.15rem 0.5rem}
+
+  /* gates */
+  .gates{padding:1.75rem 0 1.5rem;border-bottom:1px solid var(--rule)}
+  .eyebrow{font-family:var(--mono);font-size:0.66rem;text-transform:uppercase;letter-spacing:0.16em;color:var(--brass);margin:0 0 0.75rem}
+  .gate-grid{display:grid;gap:0.75rem}
+  @media(min-width:52rem){.gate-grid{grid-template-columns:repeat(3,1fr)}}
+  .gate{border:1px solid var(--rule);background:var(--paper-2);padding:0.9rem 1rem;display:flex;gap:0.75rem;align-items:flex-start}
+  .gate.cleared{border-color:var(--brass)}
+  .gate.blocked{border-color:var(--iron);background:var(--iron-soft)}
+  .gate input{margin-top:0.3rem;accent-color:var(--brass);flex:0 0 auto}
+  .gate label{font-size:0.9rem;cursor:pointer}
+  .gate .g-name{display:block;font-weight:600;margin-bottom:0.15rem}
+  .gate .g-note{display:block;color:var(--slate);font-size:0.82rem;line-height:1.45}
+  .gate-msg{margin:1rem 0 0;padding:0.85rem 1rem;border-left:3px solid var(--iron);background:var(--iron-soft);
+    font-size:0.9rem;color:var(--ink);max-width:46rem}
+  .gate-msg[hidden]{display:none}
+
+  /* main */
+  .work{display:grid;gap:2.5rem;padding-top:2rem}
+  .buildingwrap{max-width:17rem;margin:0 auto}
+  svg.building{width:100%;height:auto;display:block}
+  @media(min-width:62rem){
+    .work{grid-template-columns:19rem 1fr;gap:3rem;align-items:start}
+    .buildingwrap{position:sticky;top:1.5rem;max-width:none;margin:0}
+  }
+  .fl-body{fill:var(--paper-2);stroke:var(--rule);stroke-width:1;transition:fill .2s ease,stroke .2s ease}
+  .fl-hit{fill:transparent;cursor:pointer}
+  .fl-num{font-family:var(--mono);font-size:9px;fill:var(--slate)}
+  .fl-label{font-family:var(--body);font-size:10.5px;fill:var(--ink)}
+  .win{fill:var(--rule)}
+  g.floor.lit .fl-body{fill:var(--brass-soft);stroke:var(--brass)}
+  g.floor.lit .fl-num,g.floor.lit .fl-label{fill:var(--brass);font-weight:600}
+  g.floor.lit .win{fill:var(--brass)}
+  g.floor.sel .fl-body{stroke:var(--ink);stroke-width:2}
+  g.floor.sel .fl-label{fill:var(--ink);font-weight:600}
+  g.floor:focus{outline:none}
+  g.floor:focus-visible .fl-body{stroke:var(--brass);stroke-width:2.5}
+  .ground{fill:var(--rule-soft);stroke:var(--rule);cursor:pointer}
+  .ground:focus{outline:none}
+  .ground:focus-visible{stroke:var(--brass);stroke-width:2.5}
+  .ground.lit{fill:var(--brass-soft);stroke:var(--brass)}
+  .b-cap{font-family:var(--mono);font-size:0.66rem;color:var(--slate);text-align:center;margin:0.75rem 0 0;line-height:1.5}
+
+  /* observations */
+  h2{font-family:var(--display);font-weight:500;font-size:1.5rem;letter-spacing:-0.015em;margin:0 0 0.4rem}
+  .sub{color:var(--slate);font-size:0.92rem;margin:0 0 1.25rem;max-width:38rem}
+  .obs{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule)}
+  .obs li{border-bottom:1px solid var(--rule-soft)}
+  .obs label{display:flex;gap:0.85rem;align-items:flex-start;padding:0.8rem 0.25rem;cursor:pointer}
+  .obs input{margin-top:0.35rem;accent-color:var(--brass);flex:0 0 auto}
+  .obs .q{font-size:0.95rem;line-height:1.5}
+  .obs .tag{font-family:var(--mono);font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;
+    color:var(--slate);margin-left:auto;flex:0 0 auto;padding-top:0.3rem;white-space:nowrap}
+  .obs li:has(input:checked) .q{font-weight:500}
+  .obs li:has(input:checked) .tag{color:var(--brass)}
+
+  /* result */
+  .result{margin-top:2rem;border:1px solid var(--ink);background:var(--paper-2)}
+  .result-head{padding:1rem 1.25rem;border-bottom:1px solid var(--rule);display:flex;
+    justify-content:space-between;gap:1rem;align-items:baseline;flex-wrap:wrap}
+  .result-head h3{font-family:var(--display);font-size:1.25rem;font-weight:500;margin:0}
+  .result-head .n{font-family:var(--mono);font-size:0.68rem;color:var(--slate);text-transform:uppercase;letter-spacing:0.12em}
+  .result-body{padding:1.25rem}
+  .rrow{display:grid;grid-template-columns:1fr;gap:0.35rem;padding:0.85rem 0;border-bottom:1px solid var(--rule-soft)}
+  @media(min-width:40rem){.rrow{grid-template-columns:8rem 1fr;gap:1.25rem}}
+  .rrow:last-of-type{border-bottom:0}
+  .rrow dt{font-family:var(--mono);font-size:0.64rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--slate);padding-top:0.2em}
+  .rrow dd{margin:0;font-size:0.95rem}
+  .chips{display:flex;flex-wrap:wrap;gap:0.4rem}
+  .chip{font-family:var(--mono);font-size:0.72rem;border:1px solid var(--rule);padding:0.2rem 0.55rem;background:var(--paper)}
+  .chip.route{border-color:var(--brass);color:var(--brass)}
+  .warn{margin:1rem 1.25rem 1.25rem;padding:0.85rem 1rem;border-left:3px solid var(--brass);
+    background:var(--brass-soft);font-size:0.88rem;line-height:1.5}
+  .warn strong{font-weight:600}
+  .actions{display:flex;gap:0.6rem;flex-wrap:wrap;padding:0 1.25rem 1.25rem}
+  .btn{font-family:var(--body);font-size:0.88rem;font-weight:500;padding:0.55rem 1rem;
+    background:var(--ink);color:var(--paper);border:1px solid var(--ink);cursor:pointer}
+  .btn.ghost{background:transparent;color:var(--ink);border-color:var(--rule)}
+  .btn:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+
+  .foot{margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid var(--rule);font-size:0.85rem;color:var(--slate);max-width:46rem}
+  @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+
+<div class="shell">
+  <header class="top">
+    <p class="wm">Ledger<span>.</span></p>
+    <p class="crumb">Formulate &rsaquo; Locating the floor</p>
+  </header>
+
+  <div class="case">
+    <p class="who">Client 4a91</p>
+    <span class="meta">14 entries &middot; 3 priors &middot; last sync 2 days ago</span>
+    <span class="reaim" id="reaim">Re-aim 1 of 2</span>
+  </div>
+
+  <section class="gates">
+    <p class="eyebrow">Gates &mdash; clear these before locating anything</p>
+    <div class="gate-grid">
+      <div class="gate cleared">
+        <input type="checkbox" id="g1" checked>
+        <label for="g1"><span class="g-name">Acute risk addressed</span>
+        <span class="g-note">The mattering lens understands suicidal desire; it does not replace risk management.</span></label>
+      </div>
+      <div class="gate cleared">
+        <input type="checkbox" id="g2" checked>
+        <label for="g2"><span class="g-name">Dial not reversed</span>
+        <span class="g-note">No psychosis or mania. Do not loosen priors or generate prediction error here.</span></label>
+      </div>
+      <div class="gate cleared">
+        <input type="checkbox" id="g3" checked>
+        <label for="g3"><span class="g-name">Prior is not calibrated</span>
+        <span class="g-note">The room won&rsquo;t confirm the fear. Coercive control and IPV screened. Otherwise the task is sorting, not softening.</span></label>
+      </div>
+    </div>
+    <p class="gate-msg" id="gatemsg" hidden></p>
+  </section>
+
+  <div class="work">
+    <div class="buildingwrap">
+      <svg class="building" viewBox="0 0 200 340" role="img" aria-label="Eight floors of the self, floor one at the top">
+        <g id="floors"></g>
+        <rect class="ground" id="ground" x="8" y="292" width="184" height="34" tabindex="0" role="button" aria-label="Floor 8, the cultural substrate"></rect>
+        <text class="fl-num" x="16" y="313">8</text>
+        <text class="fl-label" x="30" y="313">The cultural substrate</text>
+      </svg>
+      <p class="b-cap">A teaching device, not anatomy. Floor&nbsp;8 is drawn as ground because no upper-floor tool reaches it.</p>
+    </div>
+
+    <div>
+      <h2>What are you seeing?</h2>
+      <p class="sub">Tick what you have observed, not what the client reports about themselves. The floor is read from signs and patterns the client is usually the last to see.</p>
+
+      <ul class="obs" id="obs"></ul>
+
+      <div class="result" id="result">
+        <div class="result-head">
+          <h3 id="r-title">Floor 6 &mdash; Procedure and emotion</h3>
+          <span class="n" id="r-conf">2 of 3 signs</span>
+        </div>
+        <div class="result-body">
+          <dl style="margin:0">
+            <div class="rrow"><dt>What lives here</dt><dd id="r-lives"></dd></div>
+            <div class="rrow"><dt>What reaches it</dt><dd id="r-reach"></dd></div>
+            <div class="rrow"><dt>Protocols</dt><dd><div class="chips" id="r-proto"></div></dd></div>
+            <div class="rrow"><dt>Would falsify</dt><dd id="r-falsify"></dd></div>
+          </dl>
+        </div>
+        <p class="warn" id="r-warn"></p>
+        <div class="actions">
+          <button class="btn" type="button">Write this formulation</button>
+          <button class="btn ghost" type="button">Open protocol</button>
+          <button class="btn ghost" type="button">Assign an experiment</button>
+        </div>
+      </div>
+
+      <p class="foot">The locator weights signs; it does not score a client and it is not an assessment instrument. It has no outcome data of its own. You decide, and the formulation you write is the one that gets tested &mdash; and, after a second re-aim on the same case, itself goes on trial.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var FLOORS = {
+    1: { name: "Narrative",
+         lives: "The story told about who they are, and what it organises.",
+         reach: "Narrative and meaning work, existential therapies, re-authoring.",
+         proto: ["The self-story"],
+         falsify: "The story changes in session and nothing downstream moves." },
+    2: { name: "Metacognition",
+         lives: "The relationship to their own thinking, not its content.",
+         reach: "Defusion, mindfulness, metacognitive work on worry and rumination.",
+         proto: ["Worry (GAD)", "OCD"],
+         falsify: "They can already hold the thought loosely and it still runs them." },
+    3: { name: "Propositional beliefs",
+         lives: "What can be stated and argued with.",
+         reach: "Thought records, evidence work, behavioural experiments aimed at content.",
+         proto: ["Health anxiety", "Social anxiety"],
+         falsify: "“I know it’s not true and I still feel it.” Accurate insight, no change." },
+    4: { name: "Relational patterns",
+         lives: "What other people are expected to do, especially under strain.",
+         reach: "The therapy relationship itself — rupture and repair, regard that was free to drop and didn’t.",
+         proto: ["The self-story", "Depression"],
+         falsify: "Warmth lands and generalises without the relationship being tested." },
+    5: { name: "Scripts and behaviour",
+         lives: "What runs without deciding, noticed only afterward.",
+         reach: "Behavioural activation, interrupting the operant, blocking the safety behaviour.",
+         proto: ["Depression", "Addiction", "OCD"],
+         falsify: "They can stop it on request and the prediction still fires." },
+    6: { name: "Procedure and emotion",
+         lives: "The response that arrives before the thought, and only updates while it’s firing.",
+         reach: "Experiential work with affect live; exposure run past the peak, not to the first flinch.",
+         proto: ["PTSD", "Prolonged grief", "Panic"],
+         falsify: "It updates from discussion alone, cold, outside the moment." },
+    7: { name: "Body and interoception",
+         lives: "The alarm, read as news about the world rather than a reading of the body.",
+         reach: "Interoceptive exposure, arousal work, pairing the signal with what actually followed.",
+         proto: ["Panic", "Chronic pain", "PTSD", "Insomnia"],
+         falsify: "The sensation is absent and the catastrophe forecast persists unchanged." },
+    8: { name: "The cultural substrate",
+         lives: "What the water is doing now — ongoing threat, discrimination, a room that really is hostile.",
+         reach: "Advocacy, environment change, handoff. No upper-floor tool reaches it.",
+         proto: ["—"],
+         falsify: "Remove the environment and the pattern persists." }
+  };
+
+  var OBS = [
+    { q: "They can state the belief and argue against it themselves, accurately, and it doesn’t move.", w: {6:2, 7:2, 3:-2}, tag: "6 · 7" },
+    { q: "The reaction arrives before the thought does.", w: {6:2, 7:1}, tag: "6" },
+    { q: "A body signal is being read as information about the world.", w: {7:3}, tag: "7" },
+    { q: "It shows up in the room, with you, on schedule.", w: {4:3}, tag: "4" },
+    { q: "It runs without a decision — they notice only afterward.", w: {5:3}, tag: "5" },
+    { q: "The environment is doing the damage right now, not only historically.", w: {8:4}, tag: "8" },
+    { q: "The trouble is how they hold their thinking, not what it says.", w: {2:3}, tag: "2" },
+    { q: "One coherent account of who they are organises everything else.", w: {1:3}, tag: "1" },
+    { q: "They have never actually tested it — the situation is avoided.", w: {5:2, 3:1}, tag: "5 · 3" }
+  ];
+
+  var PRESET = [0, 1];
+
+  var floorsG = document.getElementById("floors");
+  var groundEl = document.getElementById("ground");
+  var obsEl = document.getElementById("obs");
+  var selected = null;
+
+  var svgns = "http://www.w3.org/2000/svg";
+  function el(n, attrs) {
+    var e = document.createElementNS(svgns, n);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  for (var i = 1; i <= 7; i++) {
+    var y = 14 + (i - 1) * 39;
+    var g = el("g", { "class": "floor", "data-f": i, tabindex: "0", role: "button",
+                      "aria-label": "Floor " + i + ", " + FLOORS[i].name });
+    g.appendChild(el("rect", { "class": "fl-body", x: 22, y: y, width: 156, height: 35 }));
+    for (var w = 0; w < 5; w++) {
+      g.appendChild(el("rect", { "class": "win", x: 34 + w * 27, y: y + 22, width: 11, height: 7 }));
+    }
+    var num = el("text", { "class": "fl-num", x: 30, y: y + 15 }); num.textContent = i;
+    var lab = el("text", { "class": "fl-label", x: 44, y: y + 15 }); lab.textContent = FLOORS[i].name;
+    g.appendChild(num); g.appendChild(lab);
+    floorsG.appendChild(g);
+  }
+
+  OBS.forEach(function (o, idx) {
+    var li = document.createElement("li");
+    li.innerHTML = '<label><input type="checkbox" data-i="' + idx + '">' +
+      '<span class="q"></span><span class="tag"></span></label>';
+    li.querySelector(".q").textContent = o.q;
+    li.querySelector(".tag").textContent = o.tag;
+    obsEl.appendChild(li);
+  });
+  PRESET.forEach(function (i) { obsEl.querySelector('input[data-i="' + i + '"]').checked = true; });
+
+  function score() {
+    var s = {};
+    for (var f = 1; f <= 8; f++) s[f] = 0;
+    var checked = 0;
+    obsEl.querySelectorAll("input:checked").forEach(function (inp) {
+      checked++;
+      var w = OBS[+inp.dataset.i].w;
+      for (var f in w) s[f] += w[f];
+    });
+    return { s: s, checked: checked };
+  }
+
+  function gatesOk() {
+    return document.getElementById("g1").checked &&
+           document.getElementById("g2").checked &&
+           document.getElementById("g3").checked;
+  }
+
+  function render() {
+    var ok = gatesOk();
+    var msg = document.getElementById("gatemsg");
+    document.querySelectorAll(".gate").forEach(function (g) {
+      var c = g.querySelector("input").checked;
+      g.classList.toggle("cleared", c);
+      g.classList.toggle("blocked", !c);
+    });
+    if (!ok) {
+      msg.hidden = false;
+      msg.innerHTML = "<strong>Locating is off until the gates clear.</strong> Running an experiment past an open gate hands the prior fresh evidence with your signature on it.";
+      document.getElementById("result").style.opacity = "0.35";
+      document.getElementById("result").setAttribute("aria-disabled", "true");
+    } else {
+      msg.hidden = true;
+      document.getElementById("result").style.opacity = "1";
+      document.getElementById("result").removeAttribute("aria-disabled");
+    }
+
+    var r = score(), s = r.s;
+    var top = 1, max = -99;
+    for (var f = 1; f <= 8; f++) { if (s[f] > max) { max = s[f]; top = f; } }
+    var shown = selected || (max > 0 ? top : null);
+
+    document.querySelectorAll("g.floor").forEach(function (g) {
+      var f = +g.dataset.f;
+      g.classList.toggle("lit", ok && s[f] > 0 && s[f] >= max * 0.6);
+      g.classList.toggle("sel", f === shown);
+    });
+    groundEl.classList.toggle("lit", ok && s[8] > 0 && s[8] >= max * 0.6);
+
+    if (!shown) {
+      document.getElementById("r-title").textContent = "No floor indicated yet";
+      document.getElementById("r-conf").textContent = "0 signs";
+      ["r-lives","r-reach","r-falsify"].forEach(function(id){ document.getElementById(id).textContent = "—"; });
+      document.getElementById("r-proto").innerHTML = "";
+      document.getElementById("r-warn").textContent = "Tick what you have observed. Nothing here is inferred from the client’s self-report.";
+      return;
+    }
+
+    var F = FLOORS[shown];
+    document.getElementById("r-title").textContent = "Floor " + shown + " — " + F.name;
+    document.getElementById("r-conf").textContent = r.checked + (r.checked === 1 ? " sign" : " signs") + " ticked";
+    document.getElementById("r-lives").textContent = F.lives;
+    document.getElementById("r-reach").textContent = F.reach;
+    document.getElementById("r-falsify").textContent = F.falsify;
+    var chips = F.proto.map(function (p) {
+      return '<span class="chip' + (p === "—" ? '' : ' route') + '">' + p + "</span>";
+    }).join("");
+    document.getElementById("r-proto").innerHTML = chips;
+
+    var warn = "Origin and maintenance are different addresses. Treat where it is maintained; acknowledge where it began.";
+    if (shown === 8) {
+      warn = "<strong>Maintenance is in the substrate.</strong> No upper-floor tool reaches it, and reframing an accurate perception of a hostile world is recruitment into the injury, not therapy. The honest move is advocacy and handoff.";
+    } else if (shown === 3 && s[6] + s[7] > 0) {
+      warn = "<strong>Careful.</strong> Signs point at 6 or 7 as well. A floor-3 tool aimed at a floor-6/7 prior produces accurate insight that changes nothing.";
+    } else if (shown === 6 || shown === 7) {
+      warn = "<strong>It only updates while it’s firing</strong> — and it cannot update while it’s flooding. Past the window, nothing files.";
+    }
+    document.getElementById("r-warn").innerHTML = warn;
+  }
+
+  obsEl.addEventListener("change", function () { selected = null; render(); });
+  document.querySelectorAll(".gate input").forEach(function (i) { i.addEventListener("change", render); });
+  document.querySelectorAll("g.floor").forEach(function (g) {
+    function pick() { selected = +g.dataset.f; render(); }
+    g.addEventListener("click", pick);
+    g.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); }
+    });
+  });
+  function pickGround() { selected = 8; render(); }
+  groundEl.addEventListener("click", pickGround);
+  groundEl.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickGround(); }
+  });
+
+  render();
+})();
+</script>
