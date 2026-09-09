@@ -112,6 +112,29 @@ export const AID_OBSERVATIONS: readonly Observation[] = z.array(observationSchem
     source: 'aid',
     note: 'A relational template, not a floor-3 belief about the current situation.',
   },
+  {
+    /*
+     * The Aid routes this one relatively — "points straight at the floor where
+     * a high-precision prior just got contradicted" — because it means what
+     * the first sign in the prototype means: the load is not where the words
+     * are.
+     *
+     * So it takes that sign's shape, { 6: 2, 7: 2, 3: -2 }, at half weight.
+     * Half because the two signs are the same claim read from different
+     * evidence, and a case that shows both would otherwise count it twice and
+     * bury every other sign.
+     *
+     * THE WEIGHT IS THE DESIGNER'S, NOT THE AUTHOR'S. Derived from the
+     * accurate-insight precedent, not stated anywhere in the Decision Aid, and
+     * flagged for the author's review. Everything else in this file comes from
+     * a source document.
+     */
+    q: 'The reaction too big for the occasion.',
+    w: { 6: 1, 7: 1, 3: -1 },
+    tag: '6 · 7',
+    source: 'aid',
+    note: 'Follow the flare, not the topic.',
+  },
 ]);
 
 /** What the locator scores against: the prototype's nine, then the Aid's. */
@@ -156,6 +179,27 @@ export function score(ticked: readonly number[]): Scored {
 /** Whether a floor is lit, given the scores and whether the gates are clear. */
 export const isLit = (scores: Record<number, number>, max: number, f: number, gatesOk: boolean): boolean =>
   gatesOk && (scores[f] ?? 0) > 0 && (scores[f] ?? 0) >= max * LIT_THRESHOLD;
+
+export interface Located extends Scored {
+  /** The floor to show: the top scorer, or null when nothing scores. */
+  floor: number | null;
+  /** Every floor lit at this tick, ascending. Empty while a gate is open. */
+  lit: number[];
+}
+
+/**
+ * The whole locate step in one call: score the ticked signs, then read off the
+ * floor and everything else lit beside it.
+ *
+ * The page did this inline. It is here so that a case can be stated as
+ * "these signs, this floor" and checked — see test/locate-eval.test.ts.
+ */
+export function locate(ticked: readonly number[], gatesOk = true): Located {
+  const scored = score(ticked);
+  const lit: number[] = [];
+  for (let f = 1; f <= 8; f++) if (isLit(scored.scores, scored.max, f, gatesOk)) lit.push(f);
+  return { ...scored, floor: gatesOk ? scored.top : null, lit };
+}
 
 export const NO_FLOOR_TITLE = 'No floor indicated yet';
 export const NO_FLOOR_WARNING =

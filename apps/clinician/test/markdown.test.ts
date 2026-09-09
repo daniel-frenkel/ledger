@@ -15,7 +15,16 @@ import {
   resolveTarget,
   slugify,
 } from '../lib/markdown/links';
-import { figureFiles, floorSource, sources, sourcesIn } from '../lib/markdown/sources';
+import {
+  allSourcesIn,
+  corpus,
+  drafts,
+  figureFiles,
+  floorSource,
+  isDraft,
+  sources,
+  sourcesIn,
+} from '../lib/markdown/sources';
 import { render, sectionOf } from '../lib/markdown/render';
 
 const docs = sources();
@@ -63,6 +72,53 @@ describe('the source registry', () => {
 
   it('every floor 1-8 has a note', () => {
     for (let n = 1; n <= 8; n++) expect(floorSource(n), `floor ${n}`).toBeDefined();
+  });
+});
+
+describe('drafts', () => {
+  it('reads the status line the author writes, not a list kept here', () => {
+    expect(isDraft('DRAFT - not settled')).toBe(true);
+    expect(isDraft('DRAFT')).toBe(true);
+    expect(isDraft('  draft, for correction')).toBe(true);
+    expect(isDraft('final')).toBe(false);
+    expect(isDraft('')).toBe(false);
+    // Fails safe: anything opening with the word is held back. Publishing a
+    // draft cannot be undone; holding one back for a day can.
+    expect(isDraft('DRAFTING notes')).toBe(false);
+    expect(isDraft('Draft - adjacent')).toBe(true);
+    expect(isDraft(undefined)).toBe(false);
+  });
+
+  it('excludes the syndrome crosswalk, which says it is a draft', () => {
+    const x = sources().find((d) => d.name === 'crosswalk-protocols-for-syndromes');
+    expect(x, 'the crosswalk is on disk').toBeDefined();
+    expect(x!.status).toMatch(/^DRAFT/);
+    expect(x!.draft).toBe(true);
+    // No route, so no page and nothing to link to.
+    expect(x!.href).toBeNull();
+    // Still a tool, so a later status change needs no other edit.
+    expect(x!.kind).toBe('tool');
+  });
+
+  it('keeps drafts out of the corpus the assistant may quote', () => {
+    expect(corpus().every((d) => !d.draft)).toBe(true);
+    expect(corpus().map((d) => d.name)).not.toContain('crosswalk-protocols-for-syndromes');
+    expect(drafts().map((d) => d.name)).toContain('crosswalk-protocols-for-syndromes');
+  });
+
+  it('routes the training stack, which is finished', () => {
+    const t = sources().find((d) => d.name === 'training-stack');
+    expect(t?.draft).toBe(false);
+    expect(t?.href).toBe('/library/tools/training-stack');
+  });
+
+  it('gives no draft a route, whatever directory it is in', () => {
+    for (const d of drafts()) expect(d.href, d.file).toBeNull();
+  });
+
+  it('sourcesIn hides drafts and allSourcesIn does not', () => {
+    expect(sourcesIn('tools').map((d) => d.name)).not.toContain('crosswalk-protocols-for-syndromes');
+    expect(allSourcesIn('tools').map((d) => d.name)).toContain('crosswalk-protocols-for-syndromes');
   });
 });
 
