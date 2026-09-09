@@ -17,7 +17,17 @@ import { FLOORS } from '@ledger/shared';
 
 import { REFERENCES, TIERS, isVerified, reference, referenceKeys, unverified } from '../content/references';
 import { FLOOR_CONTENT, FLOOR_CAVEATS } from '../content/floors';
-import { GATES, OBSERVATIONS, LIT_THRESHOLD, score, warningFor, isLit } from '../content/observations';
+import {
+  AID_OBSERVATIONS,
+  GATES,
+  GATE_3_FOOTNOTE,
+  LIT_THRESHOLD,
+  LOCATOR_OBSERVATIONS,
+  OBSERVATIONS,
+  isLit,
+  score,
+  warningFor,
+} from '../content/observations';
 import {
   FLOOR_ROUTED_BY_DOCUMENT,
   PROTOCOLS,
@@ -168,17 +178,59 @@ function locatorObservations(): { q: string; w: Record<string, number>; tag: str
 describe('observations', () => {
   const fromFile = locatorObservations();
 
-  it('the reference file still has nine of them', () => {
+  it('the prototype still has nine, and all nine are still ported', () => {
     expect(fromFile).toHaveLength(9);
-    expect(OBSERVATIONS).toHaveLength(9);
+    expect(LOCATOR_OBSERVATIONS).toHaveLength(9);
   });
 
-  it('matches the reference file exactly — text, weights and tags', () => {
+  it('matches the prototype exactly — text, weights and tags', () => {
     for (let i = 0; i < fromFile.length; i++) {
-      expect(normalise(OBSERVATIONS[i]!.q), `obs ${i} text`).toBe(normalise(fromFile[i]!.q));
-      expect(OBSERVATIONS[i]!.w, `obs ${i} weights`).toEqual(fromFile[i]!.w);
-      expect(OBSERVATIONS[i]!.tag, `obs ${i} tag`).toBe(fromFile[i]!.tag);
+      expect(normalise(LOCATOR_OBSERVATIONS[i]!.q), `obs ${i} text`).toBe(normalise(fromFile[i]!.q));
+      expect(LOCATOR_OBSERVATIONS[i]!.w, `obs ${i} weights`).toEqual(fromFile[i]!.w);
+      expect(LOCATOR_OBSERVATIONS[i]!.tag, `obs ${i} tag`).toBe(fromFile[i]!.tag);
+      expect(LOCATOR_OBSERVATIONS[i]!.source, `obs ${i} source`).toBe('locator');
     }
+  });
+
+  it('scores against the prototype’s nine plus the Decision Aid’s additions', () => {
+    expect(OBSERVATIONS).toEqual([...LOCATOR_OBSERVATIONS, ...AID_OBSERVATIONS]);
+    expect(OBSERVATIONS).toHaveLength(LOCATOR_OBSERVATIONS.length + AID_OBSERVATIONS.length);
+  });
+
+  describe('the signs added from the Decision Aid', () => {
+    // The Aid bolds the sign's name, so the asterisks have to come out before
+    // the comparison; normalise() only handles HTML, not markdown.
+    const unmark = (s: string) => normalise(s).replace(/\*+/g, '');
+    const aid = unmark(read('docs/theory/tools/decision-aid-locating-the-floor.md'));
+
+    it('takes its wording from the Aid, not from us', () => {
+      for (const o of AID_OBSERVATIONS) {
+        // The Aid writes the sign, then a dash, then the rest of the sentence.
+        expect(aid, o.q).toContain(unmark(o.q).replace(/\.$/, ''));
+        if (o.note) expect(aid, o.note).toContain(unmark(o.note).replace(/^A /, 'a ').replace(/\.$/, ''));
+      }
+    });
+
+    it('is not already in the prototype', () => {
+      const prototype = LOCATOR_OBSERVATIONS.map((o) => normalise(o.q));
+      for (const o of AID_OBSERVATIONS) expect(prototype, o.q).not.toContain(normalise(o.q));
+    });
+
+    it('carries the floor the Aid assigns, at the weight every other single-floor sign carries', () => {
+      const everyTime = AID_OBSERVATIONS.find((o) => o.q.startsWith('The every-time pattern'));
+      expect(everyTime).toBeDefined();
+      expect(everyTime!.w).toEqual({ 4: 3 });
+      expect(everyTime!.tag).toBe('4');
+      expect(everyTime!.source).toBe('aid');
+    });
+
+    it('does not carry a sign the Aid gives no floor to', () => {
+      // "The reaction too big for the occasion" routes relatively — "the floor
+      // where a high-precision prior just got contradicted" — so there is no
+      // floor to weight without choosing one. Open question, not an omission.
+      expect(aid).toContain(normalise('The reaction too big for the occasion'));
+      for (const o of OBSERVATIONS) expect(o.q).not.toContain('too big for the occasion');
+    });
   });
 
   it('keeps the negative weight that pulls floor 3 down', () => {
@@ -194,6 +246,15 @@ describe('observations', () => {
         expect(n, `obs ${i} floor ${f}`).toBeLessThanOrEqual(8);
       }
     }
+  });
+
+  it('says under gate 3 that the environment question is asked twice', () => {
+    // The Aid checks the field before the floor logic runs; the floor-8 sign
+    // routes a case that is already in it. Without saying so it reads as a
+    // duplicate.
+    expect(GATE_3_FOOTNOTE).toMatch(/twice on purpose/);
+    expect(GATE_3_FOOTNOTE).toMatch(/floor-8/);
+    expect(GATES.find((g) => g.id === 'g3')).toBeDefined();
   });
 
   it('has the three gates the reference file has', () => {
