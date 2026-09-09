@@ -307,7 +307,7 @@ asking-count — as the story of the treatment.
 | Lead | For | Status |
 |---|---|---|
 | Swann & Read 1981; Swann et al. 1992 | self-verification — the story defends itself; the cast; the flight risk | **PINNED** |
-| Kube et al. 2019 | immunization at the identity level — why praise bounces | **PINNED** |
+| Kube et al. 2019 | immunization at the identity level — why praise bounces | **SUPPORTIVE — not settled.** Two experimental studies (2019); a 2024 replication from the same group failed on one manipulation. Cite as evidence for the move, not proof of it. |
 | Joiner & Metalsky 2001 | reassurance-seeking / criticism-fishing — the provoke move | **PINNED** |
 | Craske et al. 2014 | expectancy-violation design rules | **PINNED** |
 | Fennell 1997; 1998 | the bottom line; rules for living; the anomaly log — the chassis | unpinned |

@@ -24,8 +24,26 @@ describe('the source registry', () => {
   it('finds every document', () => {
     expect(sourcesIn('protocols')).toHaveLength(13);
     expect(sourcesIn('floors')).toHaveLength(8);
-    expect(sourcesIn('tools')).toHaveLength(4);
-    expect(figureFiles()).toHaveLength(26);
+    expect(figureFiles().length).toBeGreaterThanOrEqual(33);
+  });
+
+  it('routes every tool the author has put in tools/, not a fixed list', () => {
+    // The pipeline reads the working tree, so an uncommitted document under
+    // docs/theory becomes a page locally and is absent in CI. Counting them
+    // here would just encode whichever state the machine happens to be in;
+    // what has to hold is that each one reaches a page.
+    const tools = sourcesIn('tools');
+    expect(tools.length).toBeGreaterThanOrEqual(4);
+    for (const t of tools) expect(t.href, t.file).toBe(`/library/tools/${t.name}`);
+    const named = tools.map((t) => t.name);
+    for (const t of [
+      'decision-aid-locating-the-floor',
+      'decision-map-locating-the-floor',
+      'formulation-router',
+      'case-formulation-one-page',
+    ]) {
+      expect(named, t).toContain(t);
+    }
   });
 
   it('routes each kind to its page', () => {
@@ -111,12 +129,11 @@ describe('figures', () => {
     expect(missing).toEqual([]);
   });
 
-  it('every known-missing figure is still embedded somewhere', () => {
-    const embedded = new Set(docs.flatMap((d) => findLinks(d.body).filter((l) => l.embed).map((l) => l.target)));
-    for (const f of EXPECTED_MISSING_FIGURES) expect(embedded.has(f), f).toBe(true);
+  it('no figure is missing any more', () => {
+    expect(EXPECTED_MISSING_FIGURES).toEqual([]);
   });
 
-  it('all 26 figures are referenced by at least one document', () => {
+  it('every figure on disk is referenced by at least one document', () => {
     const embedded = new Set(docs.flatMap((d) => findLinks(d.body).filter((l) => l.embed).map((l) => l.target)));
     const orphans = figureFiles().filter((f) => !embedded.has(f));
     expect(orphans).toEqual([]);

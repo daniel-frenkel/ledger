@@ -323,7 +323,7 @@ PCL-5 arc, the map re-expanded — as the story of the treatment.
 |---|---|---|
 | Craske et al. 2014 | expectancy violation — Phases 4–6 design rules | **PINNED** |
 | van IJzendoorn et al. 1999 | disorganized attachment — the complex-trauma formulation | **PINNED** |
-| Kube et al. 2019 | immunization — the reinterpret move | **PINNED** |
+| Kube et al. 2019 | immunization — the reinterpret move | **SUPPORTIVE — not settled.** Two experimental studies (2019); a 2024 replication from the same group failed on one manipulation. Cite as evidence for the move, not proof of it. |
 | Sleep block (Riemann; Espie; Harvey) | Phase 3 triage; Phase 5 mechanics | **PINNED** (ledger) |
 | Ehlers & Clark 2000, *Behaviour Research and Therapy* | current-threat model — the NOW claim | unpinned |
 | Foa & Kozak 1986; Foa et al., PE trials | emotional processing; Phase 6's first vehicle | unpinned |

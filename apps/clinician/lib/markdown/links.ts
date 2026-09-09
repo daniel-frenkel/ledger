@@ -70,20 +70,14 @@ export const EXPECTED_UNRESOLVED: readonly string[] = [
 ];
 
 /**
- * Figures the corpus embeds that are not in docs/theory/figures. All seven are
- * in paper.md, which arrived with 26 of its 33 figures. They render as their
- * alt text. Same contract as EXPECTED_UNRESOLVED: a new missing figure fails
- * the test, these do not.
+ * Figures the corpus embeds that are not in docs/theory/figures.
+ *
+ * Empty, and worth keeping empty. It held seven for one commit: paper.md
+ * embeds 33 figures and arrived with 26, so those seven rendered as their alt
+ * text until the author supplied them. Same contract as EXPECTED_UNRESOLVED —
+ * a missing figure not named here fails the test.
  */
-export const EXPECTED_MISSING_FIGURES: readonly string[] = [
-  '1-precision-dial.png',
-  '9-master-loop.png',
-  '10-dominance-prestige.png',
-  '11-one-building-ten-risers.png',
-  'floors-of-the-self-elephant-rider.png',
-  'floors-of-the-self-reef-of-selves.png',
-  'floors-of-the-self-tower.png',
-];
+export const EXPECTED_MISSING_FIGURES: readonly string[] = [];
 
 const EXPECTED = new Set(EXPECTED_UNRESOLVED.map(norm));
 
