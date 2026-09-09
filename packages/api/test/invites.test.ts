@@ -9,7 +9,7 @@
  *
  * Needs Postgres with the migrations applied.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
 import { closeDb } from '../src/db/client.js';
@@ -34,17 +34,21 @@ let admin: pg.Client;
 const CLEARED = { risk: true, dial: true, calibrated: true };
 
 beforeAll(async () => {
-  app = await buildApp();
   admin = new pg.Client({ connectionString: ADMIN_URL });
   await admin.connect();
 });
 afterAll(async () => {
-  await app.close();
   await admin.end();
   await closeDb();
 });
 
 beforeEach(async () => {
+  // A fresh app per test, because @fastify/rate-limit keeps its counters in a
+  // store created at registration. Sharing one app across the file would mean
+  // the real 10-an-hour invite cap firing partway down it — which is the limit
+  // working, not a bug, so the limits stay as shipped and the store is what
+  // resets. The cap has its own test below.
+  app = await buildApp();
   await truncateAll();
   await admin.query(`INSERT INTO users (id, role) VALUES ($1,'client'), ($2,'client'), ($3,'clinician'), ($4,'clinician')`, [
     CLIENT_A,
@@ -52,6 +56,10 @@ beforeEach(async () => {
     CLINICIAN,
     CLINICIAN_B,
   ]);
+});
+
+afterEach(async () => {
+  await app.close();
 });
 
 /** Create an invite as the clinician and return its token. */
@@ -95,6 +103,21 @@ describe('POST /v1/invites', () => {
   it('refuses an unauthenticated caller', async () => {
     const res = await app.inject({ method: 'POST', url: '/v1/invites', payload: {} });
     expect(res.statusCode).toBe(401);
+  });
+
+  it('caps creation at ten an hour, per clinician and not per address', async () => {
+    for (let i = 0; i < 10; i++) {
+      const ok = await app.inject({ method: 'POST', url: '/v1/invites', headers: asUser(CLINICIAN, 'clinician'), payload: {} });
+      expect(ok.statusCode, `invite ${i + 1}`).toBe(201);
+    }
+    const over = await app.inject({ method: 'POST', url: '/v1/invites', headers: asUser(CLINICIAN, 'clinician'), payload: {} });
+    expect(over.statusCode).toBe(429);
+
+    // The budget is the clinician's, so a second clinician is unaffected — the
+    // two share an address in this test and every real deployment behind a
+    // proxy.
+    const other = await app.inject({ method: 'POST', url: '/v1/invites', headers: asUser(CLINICIAN_B, 'clinician'), payload: {} });
+    expect(other.statusCode).toBe(201);
   });
 });
 
