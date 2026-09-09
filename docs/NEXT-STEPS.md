@@ -119,13 +119,21 @@ pnpm install
 
 **Check:** in Supabase → Table Editor you see `predictions`, `priors`, `body_states`, `reinterpretations`, `journal_entries`, `crisis_events`, `clinician_client_links`, `devices`, `users`, and the `predictions` table has `exit_forecast` and `exit_actual` columns.
 
-Optional but recommended — prove RLS is live on the real database:
+Optional but recommended — prove RLS is live on the real database.
+
+**Read this before running it.** The API and RLS suites `TRUNCATE` every table
+in whatever database `.env` points at. Against the local Postgres that is
+fine; against Supabase it deletes everything you have. Because of that they
+refuse to run on a non-local database unless you say so explicitly:
 
 ```powershell
-pnpm test:rls
+$env:ALLOW_DESTRUCTIVE_TESTS=1; pnpm test:rls
 ```
 
-Expected: `24 passed`. (This truncates tables; fine while the database is empty.)
+Expected: `24 passed`. **Do this now, while the database is empty, and not
+again once it holds entries you care about.** Without that variable the suites
+stop with "Refusing to TRUNCATE a database that is not local", which is also
+why a plain `pnpm -r test` is safe to run at any time after this point.
 
 ---
 
