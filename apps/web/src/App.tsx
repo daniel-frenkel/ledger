@@ -10,6 +10,7 @@ import Predict from '@/screens/Predict';
 import Resolve from '@/screens/Resolve';
 import Ledger from '@/screens/Ledger';
 import Settings from '@/screens/Settings';
+import Join from '@/screens/Join';
 
 function Tabs() {
   return (
@@ -61,6 +62,12 @@ function Gate() {
     return (
       <Routes>
         <Route path="/sign-in" element={<SignIn />} />
+        {/*
+          /join renders signed-out rather than redirecting: the invite token is
+          in the URL fragment, and a redirect drops it. The screen reads the
+          fragment into memory on mount, then shows sign-in itself.
+        */}
+        <Route path="/join" element={<Join />} />
         <Route path="*" element={<Navigate to="/sign-in" replace />} />
       </Routes>
     );
@@ -77,6 +84,7 @@ function Gate() {
       </Route>
       <Route path="/predict" element={<Predict />} />
       <Route path="/resolve/:id" element={<Resolve />} />
+      <Route path="/join" element={<Join />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
