@@ -1,50 +1,53 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { PROTOCOLS, PROTOCOL_SECTIONS, protocol } from '@/content/protocols';
+import { PROTOCOLS } from '@/content/protocols';
+import { protocolDoc } from '@/content/protocol-docs';
 import { floor } from '@/content/floors';
-import { AwaitingAuthor } from '@/lib/inline';
+import { render } from '@/lib/markdown/render';
+import { DocLayout } from '@/lib/doc';
 
 export function generateStaticParams() {
   return PROTOCOLS.map((p) => ({ slug: p.slug }));
 }
 
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const p = protocolDoc(slug);
+  return { title: p ? `${p.heading} — Ledger clinician` : 'Not found' };
+}
+
 export default async function ProtocolPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const p = protocol(slug);
+  const p = protocolDoc(slug);
   if (!p) notFound();
 
-  return (
-    <main>
+  // The document's H1 is dropped: the page header shows the title once.
+  const out = render(p.doc, { dropTitle: true });
+
+  const head = (
+    <>
       <p className="crumb">
-        <Link href="/library/protocols">Protocols</Link> › {p.title}
+        <Link href="/library/protocols">Protocols</Link> › {p.heading}
       </p>
-      <h1>{p.title}</h1>
+      <div className="titlerow">
+        <h1>{p.heading}</h1>
+        <span className={p.label === 'Clinical note' ? 'kind note' : 'kind'}>{p.label}</span>
+      </div>
+      {p.doc.subtitle ? <p className="standfirst">{p.doc.subtitle}</p> : null}
 
-      <dl style={{ margin: '1.25rem 0 0' }}>
-        <div className="rrow">
-          <dt>Target floor(s)</dt>
-          <dd>
-            {p.floors.length === 0 ? (
-              <span className="meta">No floor in the locator routes here.</span>
-            ) : (
-              <div className="chips">
-                {p.floors.map((n) => (
-                  <Link className="chip route" key={n} href={`/library/floors/${n}`}>
-                    {n} — {floor(n)?.name}
-                  </Link>
-                ))}
-              </div>
-            )}
-          </dd>
+      {p.floors.length > 0 ? (
+        <div className="chips" style={{ margin: '0.75rem 0 1.5rem' }}>
+          {p.floors.map((n) => (
+            <Link className="chip route" key={n} href={`/library/floors/${n}`}>
+              Floor {n} — {floor(n)?.name}
+            </Link>
+          ))}
         </div>
-      </dl>
-
-      {PROTOCOL_SECTIONS.map((s) => (
-        <section key={s}>
-          <h2>{s}</h2>
-          {p.sections[s] ? <p>{p.sections[s]}</p> : <AwaitingAuthor />}
-        </section>
-      ))}
-    </main>
+      ) : (
+        <p className="meta">No floor in the locator routes here.</p>
+      )}
+    </>
   );
+
+  return <DocLayout head={head} out={out} />;
 }

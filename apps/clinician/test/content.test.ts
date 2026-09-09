@@ -15,10 +15,15 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { FLOORS } from '@ledger/shared';
 
-import { REFERENCES, reference, referenceKeys } from '../content/references';
+import { REFERENCES, TIERS, isVerified, reference, referenceKeys, unverified } from '../content/references';
 import { FLOOR_CONTENT, FLOOR_CAVEATS } from '../content/floors';
 import { GATES, OBSERVATIONS, LIT_THRESHOLD, score, warningFor, isLit } from '../content/observations';
-import { PROTOCOLS, protocolByTitle } from '../content/protocols';
+import {
+  FLOOR_ROUTED_BY_DOCUMENT,
+  PROTOCOLS,
+  protoTitlesForFloor,
+  protocolByTitle,
+} from '../content/protocols';
 import { CANON, CORE_SIX, FLOOR_TOKENS, floorsIn, modalitiesForFloor } from '../content/modalities';
 import { ALL_SECTIONS, MODALITY_SECTIONS } from '../content/modality-sections';
 import { MODEL_BLOCKS } from '../content/model';
@@ -52,12 +57,28 @@ describe('references', () => {
     expect(new Set(REFERENCES.map((r) => r.key)).size).toBe(REFERENCES.length);
   });
 
-  it('contains nothing that is not cited in theory-mapping.md', () => {
+  it('still holds every entry the memo cited, unchanged', () => {
+    // The list used to contain only these. It now covers all of docs/theory,
+    // so the check narrows to the ones other content modules cite by key.
     const memo = normalise(MEMO);
-    for (const r of REFERENCES) {
+    for (const r of REFERENCES.filter((x) => x.kind === 'corpus' || x.kind === 'external')) {
       expect(memo, `citedAs for ${r.key}`).toContain(normalise(r.citedAs));
       expect(memo, `source for ${r.key}`).toContain(normalise(r.source));
     }
+  });
+
+  it('every entry carries a ledger tier or is marked unverified', () => {
+    for (const r of REFERENCES) {
+      // The two are exclusive and exhaustive: there is no third state, and no
+      // entry may sit in the list with neither.
+      expect(isVerified(r), r.key).toBe(r.tier !== null);
+      if (!isVerified(r)) expect(unverified(), r.key).toContain(r);
+    }
+    expect(REFERENCES.filter(isVerified).length + unverified().length).toBe(REFERENCES.length);
+  });
+
+  it('only uses tiers the ledger defines', () => {
+    for (const r of REFERENCES) if (r.tier !== null) expect(TIERS).toContain(r.tier);
   });
 
   it('resolves every key cited by a content block', () => {
@@ -266,9 +287,19 @@ describe('protocols', () => {
     }
   });
 
-  it('renders every section as awaiting the author', () => {
-    for (const p of PROTOCOLS) {
-      for (const body of Object.values(p.sections)) expect(body).toBe('');
+  it('routes the clinical note from floor 4, which the locator does not do', () => {
+    // The locator's FLOORS object predates the note. Its own placement section
+    // makes it the oscillating-presentation companion to the status-injury
+    // material, which is floor 4 — rank and mattering.
+    expect(floorEntry(4).proto).not.toContain('Rank-reactive mood instability');
+    expect(FLOOR_ROUTED_BY_DOCUMENT[4]).toEqual(['Rank-reactive mood instability']);
+    expect(protoTitlesForFloor(4)).toContain('Rank-reactive mood instability');
+    expect(protocolByTitle('Rank-reactive mood instability')?.floors).toEqual([4]);
+  });
+
+  it('adds nothing to any other floor’s routing', () => {
+    for (const f of FLOOR_CONTENT.filter((x) => x.n !== 4)) {
+      expect(protoTitlesForFloor(f.n), `floor ${f.n}`).toEqual([...f.proto]);
     }
   });
 });

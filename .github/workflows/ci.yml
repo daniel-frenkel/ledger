@@ -30,8 +30,10 @@ jobs:
       - run: pnpm --filter @ledger/shared test
       - run: pnpm --filter @ledger/web test
       - run: pnpm --filter @ledger/web build
-      - run: pnpm --filter @ledger/clinician test
+      # Build first: test/build.test.ts asserts what next build actually
+      # prerendered, so it needs .next to exist.
       - run: pnpm --filter @ledger/clinician build
+      - run: pnpm --filter @ledger/clinician test
       - run: psql "$DATABASE_MIGRATE_URL" -f packages/api/src/db/rls/000_roles.sql
       - run: pnpm db:migrate
       - run: pnpm --filter @ledger/api test
