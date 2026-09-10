@@ -222,20 +222,22 @@ describe('counts_for through sync', () => {
     ...over,
   });
 
-  const sync = (predictions: unknown[]) =>
+  /** One sync is a push and a pull: the response carries the rows back. */
+  const sync = (predictions: unknown[], since?: string) =>
     app.inject({
       method: 'POST',
       url: '/v1/sync',
       headers: asUser(CLIENT_A),
-      payload: { deviceId: DEVICE_A, predictions },
+      payload: { deviceId: DEVICE_A, predictions, ...(since ? { since } : {}) },
     });
 
   it('stores the answer and reads it back', async () => {
-    expect((await sync([pred({ countsFor: 20 })])).statusCode).toBe(200);
+    const res = await sync([pred({ countsFor: 20 })]);
+    expect(res.statusCode).toBe(200);
     expect((await admin.query(`SELECT counts_for FROM predictions`)).rows[0]!.counts_for).toBe(20);
 
-    const back = await app.inject({ method: 'GET', url: '/v1/sync?since=1970-01-01T00:00:00.000Z', headers: asUser(CLIENT_A) });
-    const body = back.json() as { predictions: { countsFor: number | null }[] };
+    // The push response is the pull: the row comes back through the codec.
+    const body = res.json() as { predictions: { countsFor: number | null }[] };
     expect(body.predictions[0]!.countsFor).toBe(20);
   });
 
