@@ -17,7 +17,14 @@ import { FLOORS, LIT_THRESHOLD, OBSERVATIONS, isLit, scoreFloors } from '@ledger
 
 import { REFERENCES, TIERS, isVerified, reference, referenceKeys, unverified } from '../content/references';
 import { FLOOR_CONTENT, FLOOR_CAVEATS } from '../content/floors';
-import { GATES, GATE_3_FOOTNOTE, warningFor } from '../content/observations';
+import {
+  GATES,
+  GATE_3_FOOTNOTE,
+  SCOPE_ACK_LABEL,
+  SCOPE_STRETCH,
+  SCOPE_UNCOVERED,
+  warningFor,
+} from '../content/observations';
 import {
   FLOOR_ROUTED_BY_DOCUMENT,
   PROTOCOLS,
@@ -425,5 +432,32 @@ describe('inviteUrl', () => {
     // why the token is minted that way.
     const token = 'aA0-_'.repeat(8).slice(0, 43);
     expect(inviteUrl('https://x.test', token).endsWith(`#${token}`)).toBe(true);
+  });
+});
+
+/**
+ * The scope gate's copy, and the same rule the weights get: the app states the
+ * gate, it does not hold a second copy of the catalogue the gate reads.
+ */
+describe('the scope gate copy', () => {
+  it('says what a stretch and an uncovered floor mean, and neither refuses', () => {
+    for (const s of [SCOPE_STRETCH, SCOPE_UNCOVERED]) {
+      expect(s).toMatch(/supervision|referral/i);
+      expect(s).not.toMatch(/cannot|not allowed|forbidden/i);
+    }
+    expect(SCOPE_STRETCH).toMatch(/working literacy/i);
+    expect(SCOPE_UNCOVERED).toMatch(/nothing in your stack/i);
+  });
+
+  it('makes the acknowledgement an admission rather than a formality', () => {
+    expect(SCOPE_ACK_LABEL).toMatch(/anyway/i);
+  });
+
+  it('holds no second copy of the modality catalogue', () => {
+    const src = fs.readFileSync(path.join(here, '../content/observations.ts'), 'utf8');
+    // A slug list here would be a fork of docs/theory/tools/training-stack.md
+    // that typechecks. The catalogue is @ledger/shared's.
+    expect(src).not.toMatch(/slug:\s*'[a-z-]+'/);
+    expect(src).not.toContain('person-centered');
   });
 });

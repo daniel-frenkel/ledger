@@ -23,6 +23,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { scopeFor, scopeNeedsAck, type StackEntry } from '@ledger/shared';
 import { FLOOR_CONTENT, floor } from '@/content/floors';
 import { protoTitlesForFloor, protocolByTitle } from '@/content/protocols';
 import {
@@ -47,6 +48,9 @@ import {
   reAimLabel,
   scoreFloors,
   warningFor,
+  SCOPE_ACK_LABEL,
+  SCOPE_STRETCH,
+  SCOPE_UNCOVERED,
 } from '@/content/observations';
 import { ApiError, api, useClinicianSession } from '@/lib/api';
 
@@ -95,6 +99,24 @@ export default function FormulatePage() {
     };
   }, [session]);
 
+  /**
+   * The scope gate. The verdict the API computes is authoritative; this is the
+   * same arithmetic run locally so the clinician sees it before they press the
+   * button rather than as a refusal afterwards.
+   */
+  const [stack, setStack] = useState<StackEntry[] | null>(null);
+  const [scopeAck, setScopeAck] = useState(false);
+  useEffect(() => {
+    if (!session) return;
+    let live = true;
+    void api<{ stack: StackEntry[] }>('/v1/clinician/stack')
+      .then((out) => live && setStack(out.stack))
+      .catch(() => live && setStack([]));
+    return () => {
+      live = false;
+    };
+  }, [session]);
+
   // The re-aim count is the client's history, not this page's.
   const [priorVersions, setPriorVersions] = useState<number>(0);
   useEffect(() => {
@@ -116,8 +138,17 @@ export default function FormulatePage() {
   };
 
   const nextVersion = priorVersions + 1;
+  const scope = shown && stack ? scopeFor(stack, shown) : null;
+  const needsAck = scope !== null && scopeNeedsAck(scope);
   const canWrite =
-    !!clientId && gatesOk && ticked.length > 0 && note.trim() !== '' && falsify.trim() !== '' && !!shown && !saving;
+    !!clientId &&
+    gatesOk &&
+    ticked.length > 0 &&
+    note.trim() !== '' &&
+    falsify.trim() !== '' &&
+    !!shown &&
+    (!needsAck || scopeAck) &&
+    !saving;
 
   const write = useCallback(async () => {
     if (!clientId || !shown) return;
@@ -134,6 +165,7 @@ export default function FormulatePage() {
           gates: { risk: !!cleared['risk'], dial: !!cleared['dial'], calibrated: !!cleared['calibrated'] },
           floor: shown,
           protocolSlug: null,
+          scopeAck,
         }),
       });
       setWritten({ version: out.version });
@@ -142,12 +174,13 @@ export default function FormulatePage() {
       // the record, and it is append-only.
       setNote('');
       setFalsify('');
+      setScopeAck(false);
     } catch (e) {
       setProblem(e instanceof ApiError ? e.message : 'Could not write the formulation.');
     } finally {
       setSaving(false);
     }
-  }, [clientId, shown, note, falsify, ticked, cleared]);
+  }, [clientId, shown, note, falsify, ticked, cleared, scopeAck]);
 
   const pick = (n: number) => setSelected(n);
   const onKey = (n: number) => (e: React.KeyboardEvent) => {
@@ -366,6 +399,23 @@ export default function FormulatePage() {
                 <span className="hint">{FALSIFY_HINT}</span>
                 <textarea rows={3} value={falsify} onChange={(e) => setFalsify(e.target.value)} />
               </label>
+
+              {needsAck ? (
+                <div className="callout warning">
+                  <span className="c-title">
+                    {scope === 'stretch' ? 'Working literacy only' : 'Outside your stack'}
+                  </span>
+                  <p>{scope === 'stretch' ? SCOPE_STRETCH : SCOPE_UNCOVERED}</p>
+                  <label className="tick">
+                    <input type="checkbox" checked={scopeAck} onChange={(e) => setScopeAck(e.target.checked)} />
+                    <span>{SCOPE_ACK_LABEL}</span>
+                  </label>
+                  <p className="meta">
+                    Your stack is on <Link href="/stack">the stack page</Link>. This does not stop you writing it —
+                    the answer is kept on the row.
+                  </p>
+                </div>
+              ) : null}
 
               {problem ? <p className="warn">{problem}</p> : null}
               {written ? (

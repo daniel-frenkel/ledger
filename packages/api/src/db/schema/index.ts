@@ -497,6 +497,10 @@ export const formulations = pgTable(
     floor: smallint('floor').notNull(),
     protocolSlug: text('protocol_slug'),
     assistantRunId: uuid('assistant_run_id').references(() => assistantRuns.id, { onDelete: 'set null' }),
+    /** The scope gate's verdict, computed at the API from the clinician's own stack. Added in 0007. */
+    scope: text('scope'),
+    /** Set when the clinician wrote outside their stack knowingly. Added in 0007. */
+    scopeAck: boolean('scope_ack').notNull().default(false),
     createdAt: ts('created_at').notNull().defaultNow(),
     deletedAt: ts('deleted_at'),
   },
@@ -507,6 +511,9 @@ export const formulations = pgTable(
     check('formulations_floor_range', sql`${t.floor} BETWEEN 1 AND 8`),
     check('formulations_not_self', sql`${t.clinicianId} <> ${t.clientId}`),
     check('formulations_observations_array', sql`jsonb_typeof(${t.observations}) = 'array'`),
+    check('formulations_scope_known', sql`${t.scope} IS NULL OR ${t.scope} IN ('covered','stretch','uncovered')`),
+    // scope_ack is NOT NULL, so this is never NULL and never passes by accident.
+    check('formulations_scope_acknowledged', sql`${t.scope} IS NULL OR ${t.scope} = 'covered' OR ${t.scopeAck}`),
     check(
       'formulations_gates_shape',
       // coalesce is load-bearing: `-> 'key'` on a missing key is SQL NULL,
@@ -526,8 +533,44 @@ export type ReinterpretationRow = typeof reinterpretations.$inferSelect;
 export type PriorRow = typeof priors.$inferSelect;
 export type JournalEntryRow = typeof journalEntries.$inferSelect;
 export type CrisisEventRow = typeof crisisEvents.$inferSelect;
+// ---------------------------------------------------------------------------
+// clinician_modalities — the clinician's own training stack
+//
+// Not client data and not PHI: a clinician's training is their own, no client
+// can read it, and there is no policy that would let one. The catalogue of
+// slugs lives in packages/shared/src/stack/ with the document it came from,
+// which is why modality_slug is text and not a foreign key.
+// ---------------------------------------------------------------------------
+export const clinicianModalities = pgTable(
+  'clinician_modalities',
+  {
+    id: uuid('id').primaryKey(),
+    clinicianId: uuid('clinician_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    modalitySlug: text('modality_slug').notNull(),
+    tier: text('tier').notNull(),
+    createdAt: ts('created_at').notNull().defaultNow(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('clinician_modalities_unique').on(t.clinicianId, t.modalitySlug),
+    // Reading rules 1 and 3: one Master, one Deep at a time. Partial unique
+    // indexes, so the database states the rule and the API need not remember it.
+    uniqueIndex('clinician_modalities_one_master')
+      .on(t.clinicianId)
+      .where(sql`${t.tier} = 'master'`),
+    uniqueIndex('clinician_modalities_one_deep')
+      .on(t.clinicianId)
+      .where(sql`${t.tier} = 'deep'`),
+    check('clinician_modalities_tier_known', sql`${t.tier} IN ('master','deep','fluent','literacy')`),
+    check('clinician_modalities_slug_shape', sql`${t.modalitySlug} ~ '^[a-z0-9-]{1,64}$'`),
+  ],
+);
+
 export type LinkRow = typeof clinicianClientLinks.$inferSelect;
 export type DeviceRow = typeof devices.$inferSelect;
 export type LinkInviteRow = typeof linkInvites.$inferSelect;
 export type FormulationRow = typeof formulations.$inferSelect;
 export type AssistantRunRow = typeof assistantRuns.$inferSelect;
+export type ClinicianModalityRow = typeof clinicianModalities.$inferSelect;

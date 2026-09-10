@@ -756,4 +756,71 @@ describe('0003 invites and formulations', () => {
       await expect(c.query(`UPDATE assistant_runs SET model = 'x' WHERE id = $1`, [RUN])).rejects.toThrow();
     });
   });
+
+  // --- the training stack --------------------------------------------------
+
+  it('#34 a clinician sees only their own training stack', async () => {
+    await asCommit(CLINICIAN, 'clinician', (c) =>
+      c.query(
+        `INSERT INTO clinician_modalities (id, clinician_id, modality_slug, tier)
+         VALUES (gen_random_uuid(), $1, 'act', 'master')`,
+        [CLINICIAN],
+      ),
+    );
+    await as(CLINICIAN, 'clinician', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM clinician_modalities`)).toBe(1);
+    });
+    await as(CLINICIAN_B, 'clinician', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM clinician_modalities`)).toBe(0);
+    });
+  });
+
+  it('#35 a client cannot read a training stack at all, linked or not', async () => {
+    await linkActive();
+    await asCommit(CLINICIAN, 'clinician', (c) =>
+      c.query(
+        `INSERT INTO clinician_modalities (id, clinician_id, modality_slug, tier)
+         VALUES (gen_random_uuid(), $1, 'cbt', 'fluent')`,
+        [CLINICIAN],
+      ),
+    );
+    // Their own clinician's stack included. This is not a directory of who
+    // treats what, and nothing here is designed to become one.
+    await as(CLIENT_A, 'client', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM clinician_modalities`)).toBe(0);
+    });
+  });
+
+  it('#36 a clinician cannot write a row into another clinician’s stack', async () => {
+    await as(CLINICIAN_B, 'clinician', async (c) => {
+      await expect(
+        c.query(
+          `INSERT INTO clinician_modalities (id, clinician_id, modality_slug, tier)
+           VALUES (gen_random_uuid(), $1, 'act', 'master')`,
+          [CLINICIAN],
+        ),
+      ).rejects.toThrow();
+    });
+  });
+
+  it('#37 a formulation outside the stack is refused without the acknowledgement', async () => {
+    await linkActive();
+    const insert = (scope: string, ack: boolean, version: number) =>
+      asCommit(CLINICIAN, 'clinician', (c) =>
+        c.query(
+          `INSERT INTO formulations
+             (id, clinician_id, client_id, link_id, version, note_enc, falsify_enc,
+              observations, gates, floor, scope, scope_ack)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, '\x00'::bytea, '\x00'::bytea,
+              '[]'::jsonb, '{"risk":true,"dial":true,"calibrated":true}'::jsonb, 6, $5, $6)`,
+          [CLINICIAN, CLIENT_A, LINK, version, scope, ack],
+        ),
+      );
+
+    await expect(insert('uncovered', false, 1)).rejects.toThrow(/formulations_scope_acknowledged/);
+    await expect(insert('stretch', false, 1)).rejects.toThrow(/formulations_scope_acknowledged/);
+    // Covered needs no acknowledgement, and an acknowledged stretch is allowed.
+    await expect(insert('covered', false, 1)).resolves.toBeTruthy();
+    await expect(insert('stretch', true, 2)).resolves.toBeTruthy();
+  });
 });

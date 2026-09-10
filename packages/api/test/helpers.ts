@@ -51,7 +51,7 @@ export async function truncateAll(): Promise<void> {
   const c = new pg.Client({ connectionString: ADMIN_URL });
   await c.connect();
   await c.query(
-    'TRUNCATE formulations, assistant_runs, link_invites, prediction_priors, crisis_events, journal_entries, reinterpretations, body_states, predictions, priors, clinician_client_links, devices, users CASCADE',
+    'TRUNCATE clinician_modalities, formulations, assistant_runs, link_invites, prediction_priors, crisis_events, journal_entries, reinterpretations, body_states, predictions, priors, clinician_client_links, devices, users CASCADE',
   );
   await c.end();
 }

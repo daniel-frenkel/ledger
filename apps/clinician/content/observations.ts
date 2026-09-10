@@ -131,3 +131,19 @@ export const NOTE_HINT = 'What you observed, in your words. Encrypted at rest; t
 /** Shown on the panel once a formulation has been re-aimed twice. */
 export const ON_TRIAL =
   'This formulation has been re-aimed twice. The next move is to test the formulation itself, not the client.';
+
+/**
+ * The scope gate, as the clinician reads it.
+ *
+ * The fourth of the brandless gates in docs/theory/tools/training-stack.md
+ * (risk, diagnostics, ethics, scope). Unlike the three above the locator, this
+ * one does not refuse: working outside your stack under supervision is a
+ * normal part of building one. It refuses to let it happen silently.
+ */
+export const SCOPE_STRETCH =
+  'Your stack reaches this floor at working literacy — concepts used and moves borrowed, which the document is explicit is not the same as running the modality. Consider supervision, or a referral.';
+
+export const SCOPE_UNCOVERED =
+  'Nothing in your stack reaches this floor. A tool aimed at a floor you do not hold is the jack-of-all-trades error at the level of one client. Consider supervision, or a referral.';
+
+export const SCOPE_ACK_LABEL = 'I know, and I am writing it anyway.';

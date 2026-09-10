@@ -20,7 +20,16 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { GATE_KEYS, allGatesCleared, gatesSchema, uuid, unknownObservationIds } from '@ledger/shared';
+import {
+  GATE_KEYS,
+  allGatesCleared,
+  gatesSchema,
+  scopeFor,
+  scopeNeedsAck,
+  uuid,
+  unknownObservationIds,
+  type StackEntry,
+} from '@ledger/shared';
 import { schema, withUser } from '../db/client.js';
 import { decryptField, encryptField } from '../crypto/fields.js';
 import { newId } from '../ids.js';
@@ -33,6 +42,14 @@ import { newId } from '../ids.js';
 export { GATE_KEYS as GATE_NAMES, allGatesCleared, gatesSchema } from '@ledger/shared';
 
 export const UNKNOWN_OBSERVATIONS = 'Some observation ids are not signs the locator knows.';
+
+/**
+ * The scope gate. Unlike the three gates above it, this one does not refuse —
+ * a clinician may work outside their stack under supervision, and often should.
+ * It refuses to let that happen silently.
+ */
+export const SCOPE_NOT_ACKNOWLEDGED =
+  'This floor is outside your training stack. You can still write the formulation — say so explicitly and it is recorded on the row.';
 
 export const GATES_NOT_CLEARED =
   'Every gate has to be cleared before a formulation is written. Locating past an open gate hands the prior fresh evidence with your signature on it.';
@@ -51,6 +68,12 @@ const bodySchema = z.object({
     .regex(/^[a-z0-9-]+$/)
     .nullish(),
   assistantRunId: uuid.nullish(),
+  /**
+   * The clinician saying they know this floor is outside their stack. The
+   * verdict itself is never accepted from the body — it is computed from their
+   * own stack, server-side, below.
+   */
+  scopeAck: z.boolean().default(false),
 });
 
 const formulations: FastifyPluginAsync = async (app) => {
@@ -72,6 +95,22 @@ const formulations: FastifyPluginAsync = async (app) => {
     }
     if (!allGatesCleared(b.gates)) {
       return reply.status(422).send({ error: GATES_NOT_CLEARED, fields: GATE_KEYS.filter((k) => !b.gates[k]) });
+    }
+
+    // The scope gate. The verdict comes from the clinician's own stack and the
+    // floor they are placing this client on; the body may say only whether they
+    // accept writing outside it.
+    const stack = await withUser(request.user, (tx) =>
+      tx
+        .select({ slug: schema.clinicianModalities.modalitySlug, tier: schema.clinicianModalities.tier })
+        .from(schema.clinicianModalities)
+        .where(eq(schema.clinicianModalities.clinicianId, request.user.id)),
+    );
+    // `tier` is text in the column and a union in the type; 0007's CHECK is
+    // what keeps the two honest.
+    const scope = scopeFor(stack as StackEntry[], b.floor);
+    if (scopeNeedsAck(scope) && !b.scopeAck) {
+      return reply.status(422).send({ error: SCOPE_NOT_ACKNOWLEDGED, scope, floor: b.floor });
     }
 
     const id = newId();
@@ -117,12 +156,14 @@ const formulations: FastifyPluginAsync = async (app) => {
           floor: b.floor,
           protocolSlug: b.protocolSlug ?? null,
           assistantRunId: b.assistantRunId ?? null,
+          scope,
+          scopeAck: b.scopeAck,
         });
         return next;
       });
 
       if (version === null) return reply.status(403).send({ error: 'no active link with this client' });
-      return reply.status(201).send({ id, version });
+      return reply.status(201).send({ id, version, scope });
     } catch {
       // Never echo the driver's message: it can quote the row, ciphertext and
       // note length included.
@@ -153,6 +194,8 @@ const formulations: FastifyPluginAsync = async (app) => {
       protocolSlug: r.protocolSlug,
       observations: r.observations,
       gates: r.gates,
+      scope: r.scope,
+      scopeAck: r.scopeAck,
       assistantRunId: r.assistantRunId,
       createdAt: r.createdAt,
       note: decryptField(r.noteEnc, 'note_enc'),
