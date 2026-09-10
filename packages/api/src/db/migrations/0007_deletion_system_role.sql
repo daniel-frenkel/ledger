@@ -61,6 +61,24 @@ $$;
 --> statement-breakpoint
 GRANT EXECUTE ON FUNCTION app_purgeable_user(uuid) TO ledger_api;
 
+--> statement-breakpoint
+-- The same test, applied to a value rather than looked up by id.
+--
+-- A WITH CHECK has to judge the row as it will be *after* the write, and
+-- app_purgeable_user() cannot do that: it is STABLE and queries `users`, so it
+-- sees the statement's snapshot — the row as it was. Written that way, a
+-- WITH CHECK would approve an update that cleared deleted_at, because at the
+-- moment it ran deleted_at was still set. This one reads the new row's own
+-- column and has nothing to re-query.
+CREATE OR REPLACE FUNCTION app_purgeable_stamp(p_deleted_at timestamptz) RETURNS boolean
+LANGUAGE sql STABLE AS $$
+  SELECT app_role() = 'system'
+     AND p_deleted_at IS NOT NULL
+     AND p_deleted_at < now() - app_deletion_grace()
+$$;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION app_purgeable_stamp(timestamptz) TO ledger_api;
+
 -- ---------------------------------------------------------------------------
 -- The verb, and the policies that are the whole of its scope.
 --
@@ -206,16 +224,18 @@ CREATE POLICY users_system_purge_read ON users FOR SELECT TO ledger_api
   USING (app_purgeable_user(id));
 --> statement-breakpoint
 -- The scrub, and the only thing the system role may do to a user row. USING
--- and WITH CHECK are the same predicate, so it can neither reach a live
--- account nor turn a tombstone back into one: app_purgeable_user() requires
--- deleted_at set and past the grace period, before and after.
+-- judges the row as it is and WITH CHECK the row as it will be, so the system
+-- role can neither reach a live account nor update a tombstone back out of the
+-- purgeable set by clearing deleted_at. The two use different functions for
+-- the reason given above app_purgeable_stamp(): a WITH CHECK that re-queried
+-- the table would be reading the row it is about to replace.
 --
 -- Which columns may move is a column-level GRANT, not a policy: 0001 grants
 -- UPDATE (timezone, deleted_at) on users and nothing else, so the scrub can
 -- touch those and no others however this policy is written.
 CREATE POLICY users_system_scrub ON users FOR UPDATE TO ledger_api
   USING (app_purgeable_user(id))
-  WITH CHECK (app_purgeable_user(id));
+  WITH CHECK (app_purgeable_stamp(deleted_at));
 
 -- ---------------------------------------------------------------------------
 -- Push tokens, which cannot wait for the grace period.

@@ -953,7 +953,9 @@ describe('0003 invites and formulations', () => {
         const r = await c.query(`DELETE FROM ${t}`);
         expect(r.rowCount, t).toBe(0);
       }
-      expect((await c.query(`DELETE FROM users WHERE id = $1`, [CLIENT_A])).rowCount).toBe(0);
+      // users has no DELETE grant at all, so this is an error rather than
+      // zero rows: formulations and assistant_runs cascade from it.
+      await expect(c.query(`DELETE FROM users WHERE id = $1`, [CLIENT_A])).rejects.toThrow(/permission denied/i);
     });
     // Everything is still there.
     await as(CLIENT_A, 'client', async (c) => {
