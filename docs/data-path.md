@@ -41,7 +41,7 @@ Identity (email, display name, phone) is **never** stored in the application dat
 | `journal_entries` | own rows, full | only rows with `shared_at IS NOT NULL` |
 | `crisis_events` | own rows, read | read if `share_crisis_events` |
 | `clinician_client_links` | rows where they are the client; may update consent | rows where they are the clinician; read only |
-| `devices` | own rows | none |
+| `devices` | own rows; deleted outright when the account is deleted | none |
 | `link_invites` | none — not even with the token in hand | own rows; may create and revoke, never read the token |
 | `formulations` | **none in this version** | own rows, for a client they hold an active link to |
 | `assistant_runs` | none | own rows, for a client they hold an active link to |
@@ -64,9 +64,36 @@ Three decisions in that table are deliberate and worth stating plainly.
 
 **The client outlives the clinician.** Every client-owned row is owned by the client, not by the link. Revoking a link, or deleting the clinician's account, removes the clinician's read access and leaves the client's ledger untouched and fully theirs. Formulations and assistant runs are the mirror case: they belong to the clinician who wrote them, cascade with the clinician, and are already invisible once the link is not active.
 
-## Deletion (planned — not in milestone 1)
+## Deletion
 
-A client will be able to delete their account. That soft-deletes their `users` row and every child row (`deleted_at`), which RLS treats as gone, and a nightly job hard-deletes soft-deleted rows older than 30 days. The Supabase Auth user is deleted by the same request. Backups age out on the provider's schedule; document that window in the privacy notice.
+`DELETE /v1/me`, from Settings in the client app behind a typed confirmation. It does four things, in this order:
+
+1. **Soft-deletes every row the user owns** — `predictions`, `priors`, `body_states`, `reinterpretations`, `journal_entries` — by stamping `deleted_at`, which every RLS policy and every query in the codebase already treats as gone. The `users` row is stamped last.
+2. **Revokes every link in both directions.** A client's deletion revokes the links to them; a clinician's revokes the links they hold. Every clinician policy joins through `status = 'active'`, so this is immediate and total.
+3. **Deletes push tokens outright.** `devices` has no `deleted_at` and does not wait for the purge: a token that outlives the account is a notification sent to someone who left.
+4. **Deletes the identity at the auth provider.** Identity lives there, not here, so the account is only gone when both halves are.
+
+The order is rows-then-identity, because the reverse cannot be finished: with the auth user deleted first, a failure partway through leaves rows nobody can sign in to reach. The route checks the provider is configured **before the first write** and returns `503 DELETION_UNAVAILABLE` having changed nothing — half a deletion, with the ledger gone from the user's view and the account still able to sign in, is worse than none. If the identity call fails after the rows are stamped, the response is a 502 saying so; the retry is the same request and it is idempotent.
+
+**The auth provider sits behind one interface**, `packages/api/src/auth-admin.ts`, with a single method `deleteUser(userId)`, selected by `AUTH_PROVIDER`. The Supabase implementation is one REST call with the service-role key. This is **the only runtime use of a service-role key in the system**, it is read in that one file and nowhere else, and it never touches the application database — that connection is `ledger_api`, which has RLS enforced and no `BYPASSRLS`. Go-live gate A2 moves production to Google Cloud Identity Platform; that adds an implementation and changes nothing else.
+
+**Thirty days later the rows are destroyed.** A nightly job (`packages/api/src/jobs/purge.ts`) runs in a *system context* — still the `ledger_api` role, still under RLS, with `request.role = 'system'` and no user id. Migration `0007_deletion_system_role.sql` grants `DELETE` for the first time and then narrows it to one predicate, `app_purgeable_user()`: the row belongs to an account whose own row is soft-deleted, the grace period has passed, and the caller is the system role. Rows of a live account are unreachable by the verb even in that context, and the grace period is computed in SQL rather than trusted from the job, so a job with the interval wrong still cannot destroy an account deleted yesterday. Nothing an HTTP request can do produces `request.role = 'system'`: the auth plugin writes `client` or `clinician` from the verified token.
+
+**Granting `DELETE` at all is the risk this migration had to manage.** 0001 gives a client `FOR ALL` on their own rows, and `FOR ALL` includes `DELETE` — harmless only while no `DELETE` grant existed. The moment one does, those policies would let any client hard-delete their own ledger and skip the grace period entirely. 0007 therefore adds a **restrictive** `DELETE` policy to each of those tables first (`app_role() = 'system'`), which is ANDed with the permissive policies rather than ORed, so the system role is a necessary condition no matter what any present or future permissive policy says. `devices` is the deliberate exception: `DELETE /v1/me` removes push tokens under the user's own context, because a token outliving its account is the worse failure.
+
+**Nothing cascades, and that is deliberate.** Every foreign key to `users` in the milestone-1 schema is `ON DELETE NO ACTION`, so no single delete can quietly take a ledger with it. The purge therefore names every table and deletes in dependency order — `prediction_priors` first, `users` last — and the test asserts the ledger is empty afterwards by counting every table, so a table added later and not added to the job fails loudly rather than leaving rows behind.
+
+**The `users` row is never hard-deleted. It becomes a tombstone.** Two things pointing at a client's user row are not the client's data: `formulations` and `assistant_runs` are the clinician's record of their own clinical reasoning, and both foreign-key to `users` with `ON DELETE CASCADE` — a hard delete would take them *silently*, not fail on a constraint. So the row survives with its `id` and its `deleted_at`, `timezone` neutralised to `UTC` (it is `NOT NULL`, and a real zone is a coarse location), and nothing else on it that says anything about the person. There is no `DELETE` grant on `users` and no `DELETE` policy, which is the strongest form of "never": the verb is absent rather than restricted. The test asserts the full column list of `users`, so a column added later fails until someone decides whether it belongs on a tombstone.
+
+`clinician_client_links` is exempt for the same reason at one remove: `formulations.link_id` is `NOT NULL` and cascades from it, so deleting a link deletes the formulations written against it. The link stays, revoked — which is what makes it inert.
+
+**The unit is the account, not the row.** A single entry a client deleted on their own is not purged by this job yet. **Decided, not built:** those follow the same rule — the same 30-day grace, the same nightly job, children before parents — and are queued as their own change rather than folded in here, because doing it row by row means a parent can be purgeable while its children are still live and the order has to be worked out rather than assumed.
+
+The system context can read **only what it may destroy** — a `DELETE` whose `WHERE` touches a column has `SELECT` policies applied to it too, so the same predicate grants the read. A live row is invisible to it, as is a soft-deleted row still inside the grace period, so a bug in the purge job cannot become a cross-user read. `test/rls.test.ts` cases #44–#48 are these guarantees, including that a client cannot hard-delete their own rows, live or soft-deleted.
+
+**The window is told to the client in their own words**, on the Settings screen: entries are held for 30 days in case the deletion was a mistake, after which nobody can recover them, and the sign-in goes immediately. It is set by `DELETION_GRACE_DAYS`.
+
+Backups age out on the provider's schedule and are the one copy the grace period does not govern; that window belongs in the privacy notice (go-live gate C1).
 
 ## Open items
 

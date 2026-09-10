@@ -13,6 +13,7 @@ import { config } from '../config.js';
 import { getDb, schema, withUser } from '../db/client.js';
 import { logger } from '../logging/logger.js';
 import { sendCheckInPrompts } from '../services/push.js';
+import { schedulePurge } from './purge.js';
 
 export async function nudgeUnresolved(): Promise<{ users: number; sent: number }> {
   // Step 1: find candidate user ids. This one query runs outside RLS
@@ -49,4 +50,5 @@ export function startJobs(): void {
       logger().error({ job: 'nudgeUnresolved', err });
     }
   });
+  schedulePurge();
 }

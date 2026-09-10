@@ -56,6 +56,21 @@ async function asCommit<T>(userId: string, role: 'client' | 'clinician', fn: (c:
   }
 }
 
+/** The purge job's context: system role, no user id, the grace period set. */
+async function asSystemTx<T>(fn: (c: pg.Client) => Promise<T>): Promise<T> {
+  await api.query('BEGIN');
+  try {
+    await api.query(
+      `SELECT set_config('request.role', 'system', true),
+              set_config('request.user_id', '', true),
+              set_config('app.deletion_grace_days', '30', true)`,
+    );
+    return await fn(api);
+  } finally {
+    await api.query('ROLLBACK');
+  }
+}
+
 const count = async (c: pg.Client, sql: string, params: unknown[] = []) => Number((await c.query(sql, params)).rows[0]?.n ?? 0);
 
 beforeAll(async () => {
@@ -923,6 +938,133 @@ describe('0003 invites and formulations', () => {
     );
     await as(CLIENT_A, 'client', async (c) => {
       await expect(c.query(`UPDATE measures SET score = 1`)).rejects.toThrow();
+    });
+  });
+
+  // --- deletion -----------------------------------------------------------
+
+  it('#44 a client cannot hard-delete their own live rows', async () => {
+    // 0007 grants DELETE for the first time. 0001's client policies are FOR
+    // ALL, which includes DELETE — so without the RESTRICTIVE policies in 0007
+    // that grant would hand every client the power to destroy their own
+    // ledger. This is the test that says it did not.
+    await as(CLIENT_A, 'client', async (c) => {
+      for (const t of ['predictions', 'priors', 'body_states', 'reinterpretations', 'journal_entries']) {
+        const r = await c.query(`DELETE FROM ${t}`);
+        expect(r.rowCount, t).toBe(0);
+      }
+      // users has no DELETE grant at all, so this is an error rather than
+      // zero rows: formulations and assistant_runs cascade from it.
+      await expect(c.query(`DELETE FROM users WHERE id = $1`, [CLIENT_A])).rejects.toThrow(/permission denied/i);
+    });
+    // Everything is still there.
+    await as(CLIENT_A, 'client', async (c) => {
+      expect(await count(c, 'SELECT count(*) n FROM predictions')).toBe(1);
+      expect(await count(c, 'SELECT count(*) n FROM journal_entries')).toBe(2);
+    });
+  });
+
+  it('#45 a client cannot hard-delete rows of their own deleted account either', async () => {
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '90 days' WHERE id = $1`, [CLIENT_A]);
+    // Past the grace period, but the client is not the system role.
+    await as(CLIENT_A, 'client', async (c) => {
+      expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(0);
+      // And nobody deletes a users row at all: there is no grant, so this is
+      // an error rather than zero rows. formulations and assistant_runs
+      // cascade from it, and they are the clinician's record.
+      await expect(c.query(`DELETE FROM users WHERE id = $1`, [CLIENT_A])).rejects.toThrow(/permission denied/i);
+    });
+    expect(Number((await admin.query(`SELECT count(*) n FROM predictions`)).rows[0]!.n)).toBe(1);
+  });
+
+  it('#46 a clinician cannot hard-delete a linked client’s rows', async () => {
+    await linkActive({ predictions: true });
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '90 days' WHERE id = $1`, [CLIENT_A]);
+    await as(CLINICIAN, 'clinician', async (c) => {
+      expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(0);
+    });
+  });
+
+  it('#47 the system role deletes only rows of a deleted account past the grace period', async () => {
+    const asSystem = asSystemTx;
+
+    // Live account: refused even as system.
+    await asSystem(async (c) => {
+      expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(0);
+    });
+
+    // Account deleted but inside the window: still refused.
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '10 days' WHERE id = $1`, [CLIENT_A]);
+    await asSystem(async (c) => {
+      expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(0);
+    });
+
+    // Past the window: allowed. prediction_priors first — nothing cascades.
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '31 days' WHERE id = $1`, [CLIENT_A]);
+    await asSystem(async (c) => {
+      await c.query(`DELETE FROM prediction_priors`);
+      await c.query(`DELETE FROM body_states`);
+      await c.query(`DELETE FROM reinterpretations`);
+      await c.query(`DELETE FROM crisis_events`);
+      expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(1);
+    });
+  });
+
+  it('#48 the system role scrubs a deleted user and cannot touch a live one', async () => {
+    const scrub = (uid: string) =>
+      asSystemTx(async (c) => (await c.query(`UPDATE users SET timezone = 'UTC' WHERE id = $1`, [uid])).rowCount);
+
+    // Live: no rows. The policy's USING is app_purgeable_user(id).
+    expect(await scrub(CLIENT_A)).toBe(0);
+
+    // Deleted but inside the grace period: still no rows.
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '10 days' WHERE id = $1`, [CLIENT_A]);
+    expect(await scrub(CLIENT_A)).toBe(0);
+
+    // Past it: the scrub lands, and only on that row.
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '31 days' WHERE id = $1`, [CLIENT_A]);
+    expect(await scrub(CLIENT_A)).toBe(1);
+    expect(await scrub(CLIENT_B)).toBe(0);
+  });
+
+  it('#49 the system role cannot un-delete a user it scrubbed', async () => {
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '31 days' WHERE id = $1`, [CLIENT_A]);
+    // WITH CHECK is the same predicate as USING, so a row cannot be updated
+    // out of the purgeable set — clearing deleted_at would do exactly that.
+    await asSystemTx(async (c) => {
+      await expect(c.query(`UPDATE users SET deleted_at = NULL WHERE id = $1`, [CLIENT_A])).rejects.toThrow(
+        /row-level security/i,
+      );
+    });
+  });
+
+  it('#50 the system role reads only what it may purge, and nothing else', async () => {
+    // It needs to read: a DELETE whose WHERE touches a column has SELECT
+    // policies applied to it too, so a system role that could read nothing
+    // would delete nothing. The predicate is the same one, so what it can see
+    // is exactly what it can destroy — a live account stays invisible to it,
+    // and a bug in the purge job cannot become a cross-user read.
+    const asSystem = asSystemTx;
+    const TABLES = ['predictions', 'priors', 'journal_entries', 'body_states', 'reinterpretations'];
+
+    // Live rows: invisible.
+    await asSystem(async (c) => {
+      for (const t of TABLES) expect(await count(c, `SELECT count(*) n FROM ${t}`), t).toBe(0);
+    });
+
+    // Account deleted but inside the window: still invisible.
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '10 days' WHERE id = $1`, [CLIENT_A]);
+    await asSystem(async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM predictions`)).toBe(0);
+    });
+
+    // Past the window: visible, because it is about to be deleted.
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '31 days' WHERE id = $1`, [CLIENT_A]);
+    await asSystem(async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM predictions`)).toBe(1);
+      expect(await count(c, `SELECT count(*) n FROM journal_entries`)).toBe(2);
+      // CLIENT_B is live, so nothing of theirs is visible even now.
+      expect(await count(c, `SELECT count(*) n FROM users WHERE id = $1`, [CLIENT_B])).toBe(0);
     });
   });
 });
