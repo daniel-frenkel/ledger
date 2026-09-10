@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { Writable } from 'node:stream';
 import { build } from '../src/server.js';
+import { baaVersion } from '../src/baa.js';
 import { loggerTo } from '../src/logging/logger.js';
 
 export const ADMIN_URL = process.env.DATABASE_MIGRATE_URL ?? 'postgresql://postgres:password@localhost:5432/ledger';
@@ -92,7 +93,7 @@ export const asUser = (id: string, role: 'client' | 'clinician' = 'client', aal:
  * else is not a test about the BAA gate. Written straight to the row: the
  * acceptance screen has its own tests.
  */
-export async function acceptBaa(ids: string[], version = 'draft-2026-09-10'): Promise<void> {
+export async function acceptBaa(ids: string[], version = baaVersion()): Promise<void> {
   const c = new pg.Client({ connectionString: ADMIN_URL });
   await c.connect();
   // Upserts the row as a clinician: a suite that never seeded users still gets

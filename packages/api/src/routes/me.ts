@@ -27,6 +27,7 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { AuthAdminError, authAdmin, authAdminConfigured } from '../auth-admin.js';
+import { baaVersion } from '../baa.js';
 import { schema, withUser } from '../db/client.js';
 
 const perUser = (max: number, timeWindow: string) => ({
@@ -69,15 +70,6 @@ const OWNED = [
   schema.journalEntries,
 ] as const;
 
-/**
- * The clinician BAA version this build asks people to accept.
- *
- * Read from the frontmatter of docs/legal/clinician-baa.md at build time
- * would be better; for now it is here and the document says the same thing.
- * Changing it is what asks every clinician to accept again.
- */
-export const BAA_VERSION = 'draft-2026-09-10';
-
 const me: FastifyPluginAsync = async (app) => {
   /**
    * Accept the business associate agreement — go-live gate A1.
@@ -89,10 +81,18 @@ const me: FastifyPluginAsync = async (app) => {
   app.post('/v1/me/baa', { config: perUser(10, '1 hour') }, async (request, reply) => {
     const body = z.object({ version: z.string().min(1).max(64) }).safeParse(request.body);
     if (!body.success) return reply.status(400).send({ error: 'invalid payload', fields: ['version'] });
-    if (body.data.version !== BAA_VERSION) {
+    let current: string;
+    try {
+      current = baaVersion();
+    } catch {
+      // The document is the source; without it there is no version to record
+      // consent to. Type only — the reason names a path, not a secret.
+      return reply.status(503).send({ error: 'the business associate agreement is unavailable' });
+    }
+    if (body.data.version !== current) {
       // Accepting a version this build does not serve would record consent to
       // a document nobody can produce.
-      return reply.status(409).send({ error: 'that is not the current agreement', current: BAA_VERSION });
+      return reply.status(409).send({ error: 'that is not the current agreement', current });
     }
     if (request.user.role !== 'clinician') {
       return reply.status(403).send({ error: 'the business associate agreement is between us and a clinician' });
@@ -101,19 +101,29 @@ const me: FastifyPluginAsync = async (app) => {
     await withUser(request.user, (tx) =>
       tx
         .update(schema.users)
-        .set({ baaAcceptedVersion: body.data.version, baaAcceptedAt: new Date() })
+        .set({ baaAcceptedVersion: current, baaAcceptedAt: new Date() })
         .where(eq(schema.users.id, request.user.id)),
     );
     return reply.status(200).send({ version: body.data.version });
   });
 
   /** What this build is asking for, and whether this user has accepted it. */
-  app.get('/v1/me', async (request) => ({
-    id: request.user.id,
-    role: request.user.role,
-    mfa: request.user.aal === 'aal2',
-    baa: { current: BAA_VERSION, accepted: request.user.baaAcceptedVersion },
-  }));
+  app.get('/v1/me', async (request, reply) => {
+    let current: string | null = null;
+    try {
+      current = baaVersion();
+    } catch {
+      // Reported as null rather than as an error: the rest of this answer is
+      // still true, and the setup screen can say the document is missing.
+      current = null;
+    }
+    return reply.send({
+      id: request.user.id,
+      role: request.user.role,
+      mfa: request.user.aal === 'aal2',
+      baa: { current, accepted: request.user.baaAcceptedVersion },
+    });
+  });
 
   app.delete('/v1/me', { config: perUser(5, '1 hour') }, async (request, reply) => {
     // Before anything is written. A deletion that cannot finish must not start.

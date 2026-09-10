@@ -13,8 +13,10 @@ import pg from 'pg';
 import { closeDb } from '../src/db/client.js';
 import { setAuthAdmin } from '../src/auth-admin.js';
 import { BAA_REQUIRED_CODE, MFA_REQUIRED_CODE } from '../src/clinician-gate.js';
-import { BAA_VERSION } from '../src/routes/me.js';
+import { baaVersion } from '../src/baa.js';
 import { ADMIN_URL, CLIENT_A, CLINICIAN, CLINICIAN_B, acceptBaa, asUser, buildApp, truncateAll } from './helpers.js';
+
+const BAA_VERSION = baaVersion();
 
 let app: FastifyInstance;
 let admin: pg.Client;
@@ -322,5 +324,48 @@ describe('the clinician BAA gate', () => {
       mfa: true,
       baa: { current: BAA_VERSION, accepted: BAA_VERSION },
     });
+  });
+});
+
+/**
+ * One source for the agreement's version.
+ *
+ * The clinician app renders the document and offers its version; the API
+ * accepts only the version it reads from the same file. A constant that could
+ * drift from the document would mean recording consent to text nobody can
+ * produce — which is the failure this file exists to prevent.
+ */
+describe('the BAA version', () => {
+  it('is the frontmatter of docs/legal/clinician-baa.md, and nothing else', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const { findWorkspaceRoot } = await import('../src/env.js');
+    const { BAA_FILE, parseFrontmatter, baaDoc } = await import('../src/baa.js');
+
+    const raw = fs.readFileSync(path.join(findWorkspaceRoot(process.cwd())!, BAA_FILE), 'utf8');
+    const front = parseFrontmatter(raw);
+
+    expect(front['version'], 'the document must carry a version').toBeTruthy();
+    expect(baaDoc().version).toBe(front['version']);
+    expect(BAA_VERSION).toBe(front['version']);
+  });
+
+  it('knows the placeholder is still a placeholder', async () => {
+    const { baaDoc } = await import('../src/baa.js');
+    // When counsel's template lands, this flips and the setup screen stops
+    // saying nobody should accept it. Until then it must not quietly pass.
+    expect(baaDoc().draft).toBe(true);
+  });
+
+  it('is what the acceptance route records, without being told', async () => {
+    await admin.query(`UPDATE users SET baa_accepted_version = NULL, baa_accepted_at = NULL WHERE id = $1`, [CLINICIAN]);
+    await app.inject({
+      method: 'POST',
+      url: '/v1/me/baa',
+      headers: asUser(CLINICIAN, 'clinician'),
+      payload: { version: BAA_VERSION },
+    });
+    const row = (await admin.query(`SELECT baa_accepted_version FROM users WHERE id = $1`, [CLINICIAN])).rows[0]!;
+    expect(row.baa_accepted_version).toBe(BAA_VERSION);
   });
 });
