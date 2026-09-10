@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { Writable } from 'node:stream';
 import { build } from '../src/server.js';
+import { baaVersion } from '../src/baa.js';
 import { loggerTo } from '../src/logging/logger.js';
 
 export const ADMIN_URL = process.env.DATABASE_MIGRATE_URL ?? 'postgresql://postgres:password@localhost:5432/ledger';
@@ -51,7 +52,7 @@ export async function truncateAll(): Promise<void> {
   const c = new pg.Client({ connectionString: ADMIN_URL });
   await c.connect();
   await c.query(
-    'TRUNCATE measures, stack_goals, clinician_stacks, formulations, assistant_runs, link_invites, prediction_priors, crisis_events, journal_entries, reinterpretations, body_states, predictions, priors, clinician_client_links, devices, users CASCADE',
+    'TRUNCATE access_log, measures, stack_goals, clinician_stacks, formulations, assistant_runs, link_invites, prediction_priors, crisis_events, journal_entries, reinterpretations, body_states, predictions, priors, clinician_client_links, devices, users CASCADE',
   );
   await c.end();
 }
@@ -78,4 +79,30 @@ export async function buildApp(sink?: LogSink) {
   return build(sink ? { logger: loggerTo(sink, 'trace') } : {});
 }
 
-export const asUser = (id: string, role: 'client' | 'clinician' = 'client') => ({ 'x-test-user': `${id}:${role}` });
+/**
+ * `id:role:aal`. The assurance level defaults to aal2 — a test that is not
+ * about MFA is a test whose clinician has already enrolled. Pass 'aal1' to
+ * exercise go-live gate B2.
+ */
+export const asUser = (id: string, role: 'client' | 'clinician' = 'client', aal: 'aal1' | 'aal2' = 'aal2') => ({
+  'x-test-user': `${id}:${role}:${aal}`,
+});
+
+/**
+ * Give a clinician what go-live gate A1 requires, so a test about something
+ * else is not a test about the BAA gate. Written straight to the row: the
+ * acceptance screen has its own tests.
+ */
+export async function acceptBaa(ids: string[], version = baaVersion()): Promise<void> {
+  const c = new pg.Client({ connectionString: ADMIN_URL });
+  await c.connect();
+  // Upserts the row as a clinician: a suite that never seeded users still gets
+  // a clinician who can create an invite, and one that did is unaffected.
+  await c.query(
+    `INSERT INTO users (id, role, baa_accepted_version, baa_accepted_at)
+     SELECT u, 'clinician', $2, now() FROM unnest($1::uuid[]) AS u
+     ON CONFLICT (id) DO UPDATE SET baa_accepted_version = $2, baa_accepted_at = now()`,
+    [ids, version],
+  );
+  await c.end();
+}

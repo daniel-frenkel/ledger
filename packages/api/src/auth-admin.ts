@@ -20,12 +20,31 @@
  */
 import { config } from './config.js';
 
+/** Authenticator assurance level, in the auth world's own vocabulary. */
+export type AssuranceLevel = 'aal1' | 'aal2';
+
+/** The verified claims of a token. Never the raw string: this is post-verification. */
+export type VerifiedClaims = Record<string, unknown>;
+
 export interface AuthAdmin {
   /**
    * Delete the identity for `userId`. Idempotent: an account already gone is
    * success, because the caller is finishing a deletion either way.
    */
   deleteUser(userId: string): Promise<void>;
+
+  /**
+   * How many factors this token actually proved.
+   *
+   * The claim's name and shape are the provider's, which is why reading it is
+   * behind the seam: go-live gate B2 requires `aal2` for clinicians, and that
+   * requirement should survive the move to Identity Platform without the
+   * check that enforces it being rewritten.
+   *
+   * Fails closed. A token with no assurance claim is `aal1` — one factor is
+   * what a bearer token proves unless something says otherwise.
+   */
+  assuranceLevel(jwt: VerifiedClaims): AssuranceLevel;
 }
 
 /** The provider could not be reached or refused. Carries no response body. */
@@ -49,6 +68,14 @@ class SupabaseAuthAdmin implements AuthAdmin {
     private readonly url: string,
     private readonly serviceRoleKey: string,
   ) {}
+
+  /**
+   * Supabase puts the assurance level in the `aal` claim, and it is present
+   * on every token the project issues once MFA exists on the project.
+   */
+  assuranceLevel(jwt: VerifiedClaims): AssuranceLevel {
+    return jwt['aal'] === 'aal2' ? 'aal2' : 'aal1';
+  }
 
   async deleteUser(userId: string): Promise<void> {
     const base = this.url.replace(/\/+$/, '');

@@ -1113,3 +1113,19 @@ ul.legend li {
 p.warn.scope {
   margin: 0 0 0.8rem;
 }
+
+/* The agreement, rendered as the document it is rather than as prose. */
+.baa {
+  max-height: 22rem;
+  overflow-y: auto;
+  border: 1px solid var(--rule);
+  padding: 0.9rem 1rem;
+  background: var(--paper);
+}
+.baa pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}

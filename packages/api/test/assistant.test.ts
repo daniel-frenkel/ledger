@@ -31,7 +31,7 @@ import { closeDb } from '../src/db/client.js';
 import { LocateSchemaError } from '../src/services/ai.js';
 import { noteHash } from '../src/routes/assistant.js';
 import { observation } from '@ledger/shared';
-import { ADMIN_URL, CLIENT_A, CLIENT_B, CLINICIAN, LogSink, asUser, buildApp, truncateAll } from './helpers.js';
+import { ADMIN_URL, acceptBaa, CLIENT_A, CLIENT_B, CLINICIAN, LogSink, asUser, buildApp, truncateAll } from './helpers.js';
 
 /** The columns proposal 02 §3 allows, plus the gate keys migration 0004 adds. */
 const ROW_SHAPE = [
@@ -89,6 +89,7 @@ beforeEach(async () => {
     CLIENT_B,
     CLINICIAN,
   ]);
+  await acceptBaa([CLINICIAN]);
 });
 afterEach(async () => {
   await app.close();

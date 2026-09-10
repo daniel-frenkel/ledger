@@ -20,6 +20,8 @@ import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { INSTRUMENT_SPECS, instrument as instrumentSpec, measureSchema, uuid } from '@ledger/shared';
 import { schema, withUser } from '../db/client.js';
+import { clinicianReady } from '../clinician-gate.js';
+import { logAccess } from '../audit.js';
 import { newId } from '../ids.js';
 
 /** Rate limits key on the acting user, not the IP. */
@@ -81,6 +83,10 @@ const measures: FastifyPluginAsync = async (app) => {
       return reply.status(400).send({ error: 'invalid payload', fields: ['clientId'] });
     }
 
+    // A clinician recording a measure about someone is working with client
+    // data, so the gate applies before anything is written.
+    if (isClinician && !clinicianReady(request, reply)) return reply;
+
     if (isClinician) {
       const link = await withUser(request.user, async (tx) => {
         const [row] = await tx
@@ -136,15 +142,19 @@ const measures: FastifyPluginAsync = async (app) => {
   app.get('/v1/clients/:clientId/measures', async (request, reply) => {
     const params = z.object({ clientId: uuid }).safeParse(request.params);
     if (!params.success) return reply.status(400).send({ error: 'invalid id' });
-    if (request.user.role !== 'clinician') return reply.status(403).send({ error: 'clinicians read through a link' });
+    if (!clinicianReady(request, reply)) return reply;
 
-    const rows = await withUser(request.user, (tx) =>
-      tx
+    const rows = await withUser(request.user, async (tx) => {
+      const found = await tx
         .select()
         .from(schema.measures)
         .where(eq(schema.measures.clientId, params.data.clientId))
-        .orderBy(desc(schema.measures.administeredAt)),
-    );
+        .orderBy(desc(schema.measures.administeredAt));
+      await logAccess(tx, request.user, [
+        { table: 'measures', clientId: params.data.clientId, rowCount: found.length },
+      ]);
+      return found;
+    });
     return rows.map(toJson);
   });
 

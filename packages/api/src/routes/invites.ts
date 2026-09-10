@@ -17,6 +17,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { uuid } from '@ledger/shared';
 import { schema, withUser } from '../db/client.js';
+import { clinicianReady } from '../clinician-gate.js';
 import { newId } from '../ids.js';
 
 /** Rate limits key on the acting user, not the IP: one clinician, one budget. */
@@ -35,7 +36,10 @@ export const tokenHash = (token: string): Buffer => crypto.createHash('sha256').
 const invites: FastifyPluginAsync = async (app) => {
   // --- create ---------------------------------------------------------------
   app.post('/v1/invites', { config: perUser(10, '1 hour') }, async (request, reply) => {
-    if (request.user.role !== 'clinician') return reply.status(403).send({ error: 'clinicians invite clients' });
+    // Go-live gate A1 and B2: no invite exists before the second factor and
+    // the signed agreement do. This is the route the gate names, because it is
+    // the one that brings a client into the system at all.
+    if (!clinicianReady(request, reply)) return reply;
 
     // 32 bytes, base64url so it survives a URL fragment untouched.
     const token = crypto.randomBytes(32).toString('base64url');

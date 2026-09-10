@@ -12,10 +12,11 @@ import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
 import { closeDb } from '../src/db/client.js';
 import { AuthAdminError, setAuthAdmin } from '../src/auth-admin.js';
-import { DELETION_UNAVAILABLE_CODE } from '../src/routes/me.js';
+import { CLINICIAN_DELETION_CODE, DELETION_UNAVAILABLE_CODE } from '../src/routes/me.js';
 import { SCRUBBED_TIMEZONE, purgeDeleted } from '../src/jobs/purge.js';
 import {
   ADMIN_URL,
+  acceptBaa,
   CLIENT_A,
   CLIENT_B,
   CLINICIAN,
@@ -46,7 +47,9 @@ afterAll(async () => {
 beforeEach(async () => {
   deleteUser.mockReset();
   deleteUser.mockResolvedValue(undefined);
-  setAuthAdmin({ deleteUser });
+  // Only deleteUser is exercised here; the assurance level is the auth
+  // plugin's business and has its own tests in audit.test.ts.
+  setAuthAdmin({ deleteUser, assuranceLevel: () => 'aal2' });
   sink = new LogSink();
   app = await buildApp(sink);
   await truncateAll();
@@ -55,6 +58,7 @@ beforeEach(async () => {
     CLIENT_B,
     CLINICIAN,
   ]);
+  await acceptBaa([CLINICIAN]);
 });
 afterEach(async () => {
   await app.close();
@@ -161,15 +165,27 @@ describe('DELETE /v1/me', () => {
     expect(await count('clinician_client_links', `WHERE status = 'active'`)).toBe(0);
   });
 
-  it('revokes the links a clinician holds when the clinician deletes', async () => {
+  /**
+   * A clinician does not delete their account from here.
+   *
+   * Their formulations are a record of their own clinical reasoning,
+   * referenced by clients who did not write them and cannot consent to their
+   * removal. Winding down a practice is a conversation about retention and
+   * where the charts go, not a button.
+   */
+  it('refuses a clinician, and changes nothing', async () => {
     const made = await app.inject({ method: 'POST', url: '/v1/invites', headers: asUser(CLINICIAN, 'clinician'), payload: {} });
     const { token } = made.json() as { token: string };
     await app.inject({ method: 'POST', url: '/v1/invites/redeem', headers: asUser(CLIENT_A), payload: { token } });
 
-    expect((await del(CLINICIAN, 'clinician')).statusCode).toBe(204);
-    expect(await count('clinician_client_links', `WHERE status = 'active'`)).toBe(0);
-    // And the client's own ledger is untouched: it was never the clinician's.
-    expect(await count('predictions', 'WHERE deleted_at IS NOT NULL')).toBe(0);
+    const res = await del(CLINICIAN, 'clinician');
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ code: CLINICIAN_DELETION_CODE });
+
+    // The link is still active, the account still live, the provider untouched.
+    expect(await count('clinician_client_links', `WHERE status = 'active'`)).toBe(1);
+    expect((await admin.query(`SELECT deleted_at FROM users WHERE id = $1`, [CLINICIAN])).rows[0]!.deleted_at).toBeNull();
+    expect(deleteUser).not.toHaveBeenCalled();
   });
 
   it('touches nobody else’s rows', async () => {
@@ -319,7 +335,19 @@ describe('the purge job', () => {
    * decision that would otherwise be made silently, by omission, the first
    * time identity or a consent flag lands on this table.
    */
-  const TOMBSTONE_COLUMNS = ['created_at', 'deleted_at', 'id', 'role', 'timezone'];
+  const TOMBSTONE_COLUMNS = [
+    // Clinician-only, from 0008. A clinician row never reaches the purge —
+    // DELETE /v1/me refuses one — but the scrub nulls these anyway: a column
+    // left out because of who happens to hold it is one that gets missed the
+    // day that changes.
+    'baa_accepted_at',
+    'baa_accepted_version',
+    'created_at',
+    'deleted_at',
+    'id',
+    'role',
+    'timezone',
+  ];
 
   it('leaves nothing readable on the tombstone', async () => {
     await seed();
@@ -343,6 +371,8 @@ describe('the purge job', () => {
     // clinician's foreign key to this row still mean something.
     expect(row.id).toBe(CLIENT_A);
     expect(row.role).toBe('client');
+    expect(row.baa_accepted_version).toBeNull();
+    expect(row.baa_accepted_at).toBeNull();
   });
 
   it('keeps a formulation through its client’s purge, pointing at the tombstone', async () => {

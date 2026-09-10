@@ -17,6 +17,7 @@ import { closeDb } from '../src/db/client.js';
 import { NO_ACTIVE_LINK } from '../src/routes/measures.js';
 import {
   ADMIN_URL,
+  acceptBaa,
   CLIENT_A,
   CLIENT_B,
   CLINICIAN,
@@ -59,6 +60,7 @@ beforeEach(async () => {
     CLIENT_B,
     CLINICIAN,
   ]);
+  await acceptBaa([CLINICIAN]);
 });
 afterEach(async () => {
   await app.close();
