@@ -13,21 +13,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { FLOORS } from '@ledger/shared';
+import { FLOORS, LIT_THRESHOLD, OBSERVATIONS, isLit, scoreFloors } from '@ledger/shared';
 
 import { REFERENCES, TIERS, isVerified, reference, referenceKeys, unverified } from '../content/references';
 import { FLOOR_CONTENT, FLOOR_CAVEATS } from '../content/floors';
-import {
-  AID_OBSERVATIONS,
-  GATES,
-  GATE_3_FOOTNOTE,
-  LIT_THRESHOLD,
-  LOCATOR_OBSERVATIONS,
-  OBSERVATIONS,
-  isLit,
-  score,
-  warningFor,
-} from '../content/observations';
+import { GATES, GATE_3_FOOTNOTE, warningFor } from '../content/observations';
 import {
   FLOOR_ROUTED_BY_DOCUMENT,
   PROTOCOLS,
@@ -37,6 +27,7 @@ import {
 import { CANON, CORE_SIX, FLOOR_TOKENS, floorsIn, modalitiesForFloor } from '../content/modalities';
 import { ALL_SECTIONS, MODALITY_SECTIONS } from '../content/modality-sections';
 import { MODEL_BLOCKS } from '../content/model';
+import { inviteUrl } from '../lib/api';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..', '..');
@@ -162,101 +153,11 @@ const floorEntry = (n: number) => {
 // observations — checked against the reference file itself
 // ---------------------------------------------------------------------------
 
-/** Pull the OBS array out of the prototype and parse its weights. */
-function locatorObservations(): { q: string; w: Record<string, number>; tag: string }[] {
-  const block = LOCATOR.match(/var OBS = \[([\s\S]*?)\];/);
-  if (!block) throw new Error('OBS not found in docs/design/floor-locator.html');
-  // Each row is `{ q: "…", w: {…}, tag: "…" }`. The last has no trailing comma.
-  const row = /\{\s*q:\s*"((?:[^"\\]|\\.)*)",\s*w:\s*\{([^}]*)\},\s*tag:\s*"([^"]*)"\s*\}/g;
-  return [...block[1]!.matchAll(row)].map((m) => {
-    const w: Record<string, number> = {};
-    for (const p of (m[2] ?? '').matchAll(/(\d+)\s*:\s*(-?\d+)/g)) w[p[1]!] = Number(p[2]);
-    return { q: m[1] ?? '', w, tag: m[3] ?? '' };
-  });
-}
-
 describe('observations', () => {
-  const fromFile = locatorObservations();
-
-  it('the prototype still has nine, and all nine are still ported', () => {
-    expect(fromFile).toHaveLength(9);
-    expect(LOCATOR_OBSERVATIONS).toHaveLength(9);
-  });
-
-  it('matches the prototype exactly — text, weights and tags', () => {
-    for (let i = 0; i < fromFile.length; i++) {
-      expect(normalise(LOCATOR_OBSERVATIONS[i]!.q), `obs ${i} text`).toBe(normalise(fromFile[i]!.q));
-      expect(LOCATOR_OBSERVATIONS[i]!.w, `obs ${i} weights`).toEqual(fromFile[i]!.w);
-      expect(LOCATOR_OBSERVATIONS[i]!.tag, `obs ${i} tag`).toBe(fromFile[i]!.tag);
-      expect(LOCATOR_OBSERVATIONS[i]!.source, `obs ${i} source`).toBe('locator');
-    }
-  });
-
-  it('scores against the prototype’s nine plus the Decision Aid’s additions', () => {
-    expect(OBSERVATIONS).toEqual([...LOCATOR_OBSERVATIONS, ...AID_OBSERVATIONS]);
-    expect(OBSERVATIONS).toHaveLength(LOCATOR_OBSERVATIONS.length + AID_OBSERVATIONS.length);
-  });
-
-  describe('the signs added from the Decision Aid', () => {
-    // The Aid bolds the sign's name, so the asterisks have to come out before
-    // the comparison; normalise() only handles HTML, not markdown.
-    const unmark = (s: string) => normalise(s).replace(/\*+/g, '');
-    const aid = unmark(read('docs/theory/tools/decision-aid-locating-the-floor.md'));
-
-    it('takes its wording from the Aid, not from us', () => {
-      for (const o of AID_OBSERVATIONS) {
-        // The Aid writes the sign, then a dash, then the rest of the sentence.
-        expect(aid, o.q).toContain(unmark(o.q).replace(/\.$/, ''));
-        if (o.note) expect(aid, o.note).toContain(unmark(o.note).replace(/^A /, 'a ').replace(/\.$/, ''));
-      }
-    });
-
-    it('is not already in the prototype', () => {
-      const prototype = LOCATOR_OBSERVATIONS.map((o) => normalise(o.q));
-      for (const o of AID_OBSERVATIONS) expect(prototype, o.q).not.toContain(normalise(o.q));
-    });
-
-    it('carries the floor the Aid assigns, at the weight every other single-floor sign carries', () => {
-      const everyTime = AID_OBSERVATIONS.find((o) => o.q.startsWith('The every-time pattern'));
-      expect(everyTime).toBeDefined();
-      expect(everyTime!.w).toEqual({ 4: 3 });
-      expect(everyTime!.tag).toBe('4');
-      expect(everyTime!.source).toBe('aid');
-    });
-
-    it('scores the sign the Aid routes relatively, at a weight marked as ours', () => {
-      // "The reaction too big for the occasion" points at "the floor where a
-      // high-precision prior just got contradicted" — the same claim the
-      // prototype's first sign makes, so it takes that sign's shape at half
-      // weight. The wording is the Aid's; the weight is not, and the source
-      // file says so.
-      expect(aid).toContain(unmark('The reaction too big for the occasion'));
-      const flare = AID_OBSERVATIONS.find((o) => o.q.startsWith('The reaction too big'));
-      expect(flare).toBeDefined();
-      expect(flare!.w).toEqual({ 6: 1, 7: 1, 3: -1 });
-      expect(flare!.tag).toBe('6 · 7');
-      expect(flare!.source).toBe('aid');
-    });
-
-    it('halves the sign it was derived from, so the two cannot double-count', () => {
-      const derivedFrom = LOCATOR_OBSERVATIONS[0]!;
-      const flare = AID_OBSERVATIONS.find((o) => o.q.startsWith('The reaction too big'))!;
-      expect(Object.keys(flare.w).sort()).toEqual(Object.keys(derivedFrom.w).sort());
-      for (const f of Object.keys(flare.w)) expect(flare.w[f]! * 2, `floor ${f}`).toBe(derivedFrom.w[f]);
-    });
-
-    it('records in the source file that the weight is not the author’s', () => {
-      // The one number in this file that no source document states. If the
-      // flag goes, so does the reader's only warning.
-      const src = read('apps/clinician/content/observations.ts');
-      expect(src).toMatch(/THE WEIGHT IS THE DESIGNER'S, NOT THE AUTHOR'S/);
-      expect(src).toMatch(/flagged for the author's review/);
-    });
-  });
-
-  it('keeps the negative weight that pulls floor 3 down', () => {
-    expect(OBSERVATIONS[0]!.w['3']).toBe(-2);
-  });
+  // The nine ported from the prototype, the two from the Decision Aid, and the
+  // scoring are checked in packages/shared/test/floors.test.ts, against those
+  // documents, next to where they now live. What is left here is what this app
+  // still owns: the gate copy and the warnings.
 
   it('weights reference only floors 1–8', () => {
     for (const [i, o] of OBSERVATIONS.entries()) {
@@ -275,7 +176,7 @@ describe('observations', () => {
     // duplicate.
     expect(GATE_3_FOOTNOTE).toMatch(/twice on purpose/);
     expect(GATE_3_FOOTNOTE).toMatch(/floor-8/);
-    expect(GATES.find((g) => g.id === 'g3')).toBeDefined();
+    expect(GATES.find((g) => g.id === 'calibrated')).toBeDefined();
   });
 
   it('has the three gates the reference file has', () => {
@@ -288,47 +189,40 @@ describe('observations', () => {
   });
 });
 
-describe('scoring', () => {
-  it('lights the top floor and anything within 60% of it', () => {
-    expect(LIT_THRESHOLD).toBe(0.6);
-    // Sign 0 weighs 6:+2, 7:+2, 3:-2. Both 6 and 7 tie for top and light.
-    const { scores, max, top } = score([0]);
-    expect(max).toBe(2);
-    expect(top).toBe(6);
-    expect(isLit(scores, max, 6, true)).toBe(true);
-    expect(isLit(scores, max, 7, true)).toBe(true);
-    expect(isLit(scores, max, 3, true)).toBe(false);
+describe('the weights are not duplicated here', () => {
+  it('this app holds no second copy of the signs or the scoring', () => {
+    // The whole point of moving them: one weight, one place. A literal weight
+    // map in this file would be a fork that typechecks.
+    const src = read('apps/clinician/content/observations.ts');
+    expect(src).not.toMatch(/w:\s*\{\s*\d+\s*:/);
+    expect(src).toContain("from '@ledger/shared'");
   });
 
-  it('lights nothing while a gate is open', () => {
-    const { scores, max } = score([2]);
-    expect(isLit(scores, max, 7, false)).toBe(false);
-    expect(isLit(scores, max, 7, true)).toBe(true);
-  });
-
-  it('indicates no floor when nothing scores above zero', () => {
-    expect(score([]).top).toBeNull();
+  it('uses the shared list, and the shared list is the one the sources fix', () => {
+    expect(OBSERVATIONS.length).toBeGreaterThanOrEqual(11);
+    expect(OBSERVATIONS.every((o) => typeof o.id === 'string' && o.id !== '')).toBe(true);
   });
 });
 
 describe('warnings', () => {
   it('floor 8 gets the substrate warning', () => {
-    expect(warningFor(8, score([5]).scores).lead).toBe('Maintenance is in the substrate.');
+    expect(warningFor(8, scoreFloors(['environment-now']).scores).lead).toBe('Maintenance is in the substrate.');
   });
 
   it('floor 3 warns about 6/7 only when they also score', () => {
-    const withHot = score([0, 8]).scores; // sign 8 adds 3:+1, sign 0 adds 6/7
+    // never-tested adds 3:+1; insight-does-not-move adds 6 and 7.
+    const withHot = scoreFloors(['insight-does-not-move', 'never-tested']).scores;
     expect(warningFor(3, withHot).lead).toBe('Careful.');
-    const noHot = score([8]).scores; // 5:+2, 3:+1 — nothing on 6 or 7
+    const noHot = scoreFloors(['never-tested']).scores; // 5:+2, 3:+1 — nothing on 6 or 7
     expect(warningFor(3, noHot).lead).toBe('');
   });
 
   it('floors 6 and 7 get the flooding warning', () => {
-    for (const n of [6, 7]) expect(warningFor(n, score([1]).scores).rest).toMatch(/flooding/);
+    for (const n of [6, 7]) expect(warningFor(n, scoreFloors(['reaction-before-thought']).scores).rest).toMatch(/flooding/);
   });
 
   it('everything else gets the origin-versus-maintenance warning', () => {
-    for (const n of [1, 2, 4, 5]) expect(warningFor(n, score([]).scores).rest).toMatch(/Origin and maintenance/);
+    for (const n of [1, 2, 4, 5]) expect(warningFor(n, scoreFloors([]).scores).rest).toMatch(/Origin and maintenance/);
   });
 });
 
@@ -505,5 +399,31 @@ describe('model', () => {
       expect(b.cites.length, b.heading).toBeGreaterThan(0);
       for (const k of b.cites) expect(referenceKeys()).toContain(k);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// the invite link
+// ---------------------------------------------------------------------------
+
+describe('inviteUrl', () => {
+  it('puts the token in the fragment, never the path or a query', () => {
+    const url = inviteUrl('https://ledger.example', 'abc123');
+    expect(url).toBe('https://ledger.example/join#abc123');
+    // The fragment is the whole point: a browser does not send it to a server.
+    expect(url.split('#')[0]).not.toContain('abc123');
+    expect(url).not.toContain('?');
+  });
+
+  it('does not double the slash when the base has a trailing one', () => {
+    expect(inviteUrl('https://ledger.example/', 'abc')).toBe('https://ledger.example/join#abc');
+    expect(inviteUrl('https://ledger.example///', 'abc')).toBe('https://ledger.example/join#abc');
+  });
+
+  it('leaves a base64url token untouched', () => {
+    // base64url has no characters that need escaping in a fragment, which is
+    // why the token is minted that way.
+    const token = 'aA0-_'.repeat(8).slice(0, 43);
+    expect(inviteUrl('https://x.test', token).endsWith(`#${token}`)).toBe(true);
   });
 });

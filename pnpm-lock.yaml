@@ -93,6 +93,9 @@ importers:
       '@ledger/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@supabase/supabase-js':
+        specifier: ^2.47.10
+        version: 2.115.0(@opentelemetry/api@1.9.1)
       gray-matter:
         specifier: ^4.0.3
         version: 4.0.3

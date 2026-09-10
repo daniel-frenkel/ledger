@@ -15,6 +15,7 @@ import pg from 'pg';
 import { closeDb } from '../src/db/client.js';
 import { tokenHash } from '../src/routes/invites.js';
 import { GATE_NAMES } from '../src/routes/formulations.js';
+import { OBSERVATION_IDS } from '@ledger/shared';
 import {
   ADMIN_URL,
   CLIENT_A,
@@ -296,7 +297,7 @@ describe('POST /v1/formulations', () => {
         clientId: CLIENT_A,
         note: NOTE,
         falsify: FALSIFY,
-        observations: [0, 3],
+        observations: ['insight-does-not-move', 'shows-up-in-the-room'],
         gates: CLEARED,
         floor: 4,
         ...over,
@@ -331,6 +332,21 @@ describe('POST /v1/formulations', () => {
     await link();
     const res = await write({ gates: { risk: true, dial: true } });
     expect(res.statusCode).toBe(400);
+  });
+
+  it('refuses an observation id the locator does not know', async () => {
+    await link();
+    const res = await write({ observations: ['insight-does-not-move', 'not-a-sign', 'also-not'] });
+    expect(res.statusCode).toBe(422);
+    // Names exactly which ones, so the caller can fix it, and stores nothing.
+    expect((res.json() as { unknown: string[] }).unknown).toEqual(['not-a-sign', 'also-not']);
+    expect((await admin.query(`SELECT count(*) n FROM formulations`)).rows[0]!.n).toBe('0');
+  });
+
+  it('accepts every id the shared list defines', async () => {
+    await link();
+    const res = await write({ observations: [...OBSERVATION_IDS] });
+    expect(res.statusCode).toBe(201);
   });
 
   it('requires the falsify line', async () => {
@@ -386,14 +402,14 @@ describe('POST /v1/formulations', () => {
         method: 'POST',
         url: '/v1/formulations',
         headers: asUser(CLINICIAN, 'clinician'),
-        payload: { clientId: CLIENT_A, note: NOTE, falsify: FALSIFY, observations: [0], gates: CLEARED, floor: 4 },
+        payload: { clientId: CLIENT_A, note: NOTE, falsify: FALSIFY, observations: ['insight-does-not-move'], gates: CLEARED, floor: 4 },
       });
       // And a rejected one, where a validation message could echo the note.
       await noisy.inject({
         method: 'POST',
         url: '/v1/formulations',
         headers: asUser(CLINICIAN, 'clinician'),
-        payload: { clientId: CLIENT_A, note: NOTE, falsify: FALSIFY, observations: [0], gates: { risk: false, dial: true, calibrated: true }, floor: 4 },
+        payload: { clientId: CLIENT_A, note: NOTE, falsify: FALSIFY, observations: ['insight-does-not-move'], gates: { risk: false, dial: true, calibrated: true }, floor: 4 },
       });
       expect(sink.text()).not.toContain('ZQX-NOTE');
       expect(sink.text()).not.toContain('ZQX-FALSIFY');

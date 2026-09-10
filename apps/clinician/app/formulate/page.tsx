@@ -21,10 +21,10 @@
  * actually clears them, and no observations are pre-ticked. Pre-ticked signs
  * would be findings nobody observed.
  */
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { FLOOR_CONTENT, floor } from '@/content/floors';
-import { protocolByTitle } from '@/content/protocols';
+import { protoTitlesForFloor, protocolByTitle } from '@/content/protocols';
 import {
   BUILDING_CAPTION,
   GATES,
@@ -37,27 +37,117 @@ import {
   OBSERVATIONS,
   OBSERVATIONS_HEADING,
   OBSERVATIONS_SUB,
-  RESULT_ACTIONS,
+  FALSIFY_HINT,
+  FALSIFY_LABEL,
+  NOTE_HINT,
+  NOTE_LABEL,
+  ON_TRIAL,
   isLit,
-  score,
+  isOnTrial,
+  reAimLabel,
+  scoreFloors,
   warningFor,
 } from '@/content/observations';
+import { ApiError, api, useClinicianSession } from '@/lib/api';
+
+interface LinkedClient {
+  id: string;
+  clientId: string;
+  status: string;
+}
 
 const FLOOR_Y = (i: number) => 14 + (i - 1) * 39;
 
 export default function FormulatePage() {
+  const { session, loading: sessionLoading } = useClinicianSession();
   const [cleared, setCleared] = useState<Record<string, boolean>>({});
-  const [ticked, setTicked] = useState<number[]>([]);
+  const [ticked, setTicked] = useState<string[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
 
+  // The case this formulation is about.
+  const [clients, setClients] = useState<LinkedClient[] | null>(null);
+  const [clientId, setClientId] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  const [falsify, setFalsify] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [written, setWritten] = useState<{ version: number } | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+
   const gatesOk = GATES.every((g) => cleared[g.id]);
-  const { scores, checked, top, max } = score(ticked);
+  const { scores, checked, top, max } = scoreFloors(ticked);
   const shown = selected ?? top;
 
-  const toggleObs = (i: number) => {
+  // Active links only: a formulation cannot be written against any other kind,
+  // and offering one would be an error the API has to refuse.
+  useEffect(() => {
+    if (!session) return;
+    let live = true;
+    void api<LinkedClient[]>('/v1/links')
+      .then((rows) => {
+        if (!live) return;
+        const active = rows.filter((r) => r.status === 'active');
+        setClients(active);
+        setClientId((c) => c ?? active[0]?.clientId ?? null);
+      })
+      .catch(() => live && setClients([]));
+    return () => {
+      live = false;
+    };
+  }, [session]);
+
+  // The re-aim count is the client's history, not this page's.
+  const [priorVersions, setPriorVersions] = useState<number>(0);
+  useEffect(() => {
+    setPriorVersions(0);
+    setWritten(null);
+    if (!session || !clientId) return;
+    let live = true;
+    void api<{ version: number }[]>(`/v1/clients/${clientId}/formulations`)
+      .then((rows) => live && setPriorVersions(rows[0]?.version ?? 0))
+      .catch(() => live && setPriorVersions(0));
+    return () => {
+      live = false;
+    };
+  }, [session, clientId]);
+
+  const toggleObs = (id: string) => {
     setSelected(null);
-    setTicked((t) => (t.includes(i) ? t.filter((x) => x !== i) : [...t, i]));
+    setTicked((t) => (t.includes(id) ? t.filter((x) => x !== id) : [...t, id]));
   };
+
+  const nextVersion = priorVersions + 1;
+  const canWrite =
+    !!clientId && gatesOk && ticked.length > 0 && note.trim() !== '' && falsify.trim() !== '' && !!shown && !saving;
+
+  const write = useCallback(async () => {
+    if (!clientId || !shown) return;
+    setSaving(true);
+    setProblem(null);
+    try {
+      const out = await api<{ id: string; version: number }>('/v1/formulations', {
+        method: 'POST',
+        body: JSON.stringify({
+          clientId,
+          note,
+          falsify,
+          observations: ticked,
+          gates: { risk: !!cleared['risk'], dial: !!cleared['dial'], calibrated: !!cleared['calibrated'] },
+          floor: shown,
+          protocolSlug: null,
+        }),
+      });
+      setWritten({ version: out.version });
+      setPriorVersions(out.version);
+      // The note is gone from this page the moment it is written; the row is
+      // the record, and it is append-only.
+      setNote('');
+      setFalsify('');
+    } catch (e) {
+      setProblem(e instanceof ApiError ? e.message : 'Could not write the formulation.');
+    } finally {
+      setSaving(false);
+    }
+  }, [clientId, shown, note, falsify, ticked, cleared]);
 
   const pick = (n: number) => setSelected(n);
   const onKey = (n: number) => (e: React.KeyboardEvent) => {
@@ -73,9 +163,44 @@ export default function FormulatePage() {
   return (
     <main>
       <div className="case">
-        <p className="who">Client —</p>
-        <span className="meta">No client loaded</span>
-        <span className="placeholder">Static placeholder · re-aim counter lands with persistence</span>
+        <p className="who">Client</p>
+        {sessionLoading ? (
+          <span className="meta">Checking your session…</span>
+        ) : !session ? (
+          <span className="meta">
+            Sign in to write a formulation. The locator below works without one — nothing on it is saved.
+          </span>
+        ) : clients === null ? (
+          <span className="meta">Loading your clients…</span>
+        ) : clients.length === 0 ? (
+          <span className="meta">
+            No active links yet. <Link href="/invites">Invite a client</Link> — they choose what to share when they
+            accept.
+          </span>
+        ) : (
+          <>
+            <select
+              className="picker"
+              value={clientId ?? ''}
+              onChange={(e) => setClientId(e.target.value)}
+              aria-label="Client"
+            >
+              {clients.map((c) => (
+                <option key={c.clientId} value={c.clientId}>
+                  {c.clientId.slice(0, 8)}
+                </option>
+              ))}
+            </select>
+            <span className="meta">
+              {priorVersions === 0
+                ? 'First formulation for this client'
+                : (reAimLabel(nextVersion) ?? `Version ${nextVersion}`)}
+            </span>
+          </>
+        )}
+        <span className="placeholder">
+          Clients have no names in this system. The id is what there is.
+        </span>
       </div>
 
       <section className="gates">
@@ -92,7 +217,7 @@ export default function FormulatePage() {
               <label htmlFor={g.id}>
                 <span className="g-name">{g.name}</span>
                 <span className="g-note">{g.note}</span>
-                {g.id === 'g3' ? <span className="g-twice">{GATE_3_FOOTNOTE}</span> : null}
+                {g.id === 'calibrated' ? <span className="g-twice">{GATE_3_FOOTNOTE}</span> : null}
               </label>
             </div>
           ))}
@@ -162,10 +287,10 @@ export default function FormulatePage() {
           <p className="sub">{OBSERVATIONS_SUB}</p>
 
           <ul className="obs">
-            {OBSERVATIONS.map((o, i) => (
-              <li key={i} className={ticked.includes(i) ? 'on' : ''}>
+            {OBSERVATIONS.map((o) => (
+              <li key={o.id} className={ticked.includes(o.id) ? 'on' : ''}>
                 <label>
-                  <input type="checkbox" checked={ticked.includes(i)} onChange={() => toggleObs(i)} />
+                  <input type="checkbox" checked={ticked.includes(o.id)} onChange={() => toggleObs(o.id)} />
                   <span className="q">
                     {o.q}
                     {o.note ? <span className="o-note">{o.note}</span> : null}
@@ -224,16 +349,61 @@ export default function FormulatePage() {
               {warn.lead ? ' ' : ''}
               {warn.rest}
             </p>
-            <div className="actions">
-              {RESULT_ACTIONS.map((a, i) => (
-                <button key={a} className={`btn${i === 0 ? '' : ' ghost'}`} type="button" disabled>
-                  {a}
+            {isOnTrial(nextVersion) ? (
+              <p className="warn on-trial">
+                <strong>The formulation is on trial.</strong> {ON_TRIAL}
+              </p>
+            ) : null}
+
+            <div className="write">
+              <label className="field">
+                <span className="label">{NOTE_LABEL}</span>
+                <span className="hint">{NOTE_HINT}</span>
+                <textarea rows={4} value={note} onChange={(e) => setNote(e.target.value)} />
+              </label>
+              <label className="field">
+                <span className="label">{FALSIFY_LABEL}</span>
+                <span className="hint">{FALSIFY_HINT}</span>
+                <textarea rows={3} value={falsify} onChange={(e) => setFalsify(e.target.value)} />
+              </label>
+
+              {problem ? <p className="warn">{problem}</p> : null}
+              {written ? (
+                <p className="meta">
+                  Written as version {written.version}. Formulations are append-only — a re-aim is a new one, not an
+                  edit.
+                </p>
+              ) : null}
+
+              <div className="actions">
+                <button className="btn" type="button" disabled={!canWrite} onClick={() => void write()}>
+                  {saving ? 'Writing…' : 'Write this formulation'}
                 </button>
-              ))}
+                {shown && protoTitlesForFloor(shown)[0] ? (
+                  <Link
+                    className="btn ghost"
+                    href={`/library/protocols/${protocolByTitle(protoTitlesForFloor(shown)[0]!)?.slug ?? ''}`}
+                  >
+                    Open protocol
+                  </Link>
+                ) : null}
+              </div>
+              {!canWrite && !saving ? (
+                <p className="meta">
+                  {!session
+                    ? 'Sign in to write.'
+                    : !clientId
+                      ? 'Choose a client.'
+                      : !gatesOk
+                        ? 'Clear the gates first.'
+                        : ticked.length === 0
+                          ? 'Tick what you have observed.'
+                          : note.trim() === ''
+                            ? 'The note is required.'
+                            : 'The falsify line is required.'}
+                </p>
+              ) : null}
             </div>
-            <p className="meta" style={{ padding: '0 1.25rem 1.25rem' }}>
-              Actions are inert in this pass — nothing is saved yet.
-            </p>
           </div>
 
           <p className="foot">{LOCATOR_DISCLAIMER}</p>

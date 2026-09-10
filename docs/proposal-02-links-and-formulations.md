@@ -2,6 +2,16 @@
 
 **Status:** approved for build (Sept 2026). Supersedes nothing; extends proposal 01. Migration `0003_links_formulations.sql` is additive. Nothing here changes what the client sees on the mismatch screen, the ledger sentence, or the crisis card.
 
+**Status update, 10 Sept 2026 — what shipped differs from the text below in these ways (PRs #17, #18):**
+- `redeem_invite()` takes a fourth argument, `p_link_id`: every id in the schema is an app-minted v7 UUID and a SECURITY DEFINER function has no v7 generator, so the link id is passed in rather than generated database-side.
+- `formulations` is append-only by three mechanisms, not one: no UPDATE/DELETE grant, no UPDATE/DELETE policy, and a trigger. `deleted_at` exists for the future deletion job but the API role cannot write it.
+- The 20-open-invite cap is a trigger (a CHECK cannot count rows) and is also enforced in the route.
+- The `gates` CHECK requires all three keys present and boolean (a missing key made the original CHECK evaluate to NULL and pass); the route additionally requires all three TRUE and returns 422 naming the failing gate.
+- Every invite failure — unknown, used, expired, revoked, self, malformed body — returns the same 404 and the same sentence; a 400 would confirm the token was well-formed.
+- `GET /v1/clients/:id/formulations` through a revoked link returns `[]`, not 403.
+- Rate limits key on the authenticated user id, not the client IP.
+- `/join` renders the sign-in flow itself rather than redirecting (a redirect drops the fragment), reads the token into memory on mount, and clears it from the address bar with `replaceState`.
+
 **Why one proposal.** The three pieces share a migration and a trust model. The product is clinician-facing; the clinician invites the client; the clinician formulates; the assistant helps the clinician formulate. Every write path below is either the clinician acting on their own working notes, or the client acting on their own consent. There is still no path by which a clinician writes into a client's data beyond `safe_to_test` and clinician-origin priors.
 
 ---

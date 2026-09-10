@@ -950,3 +950,61 @@ h2.notehead {
   letter-spacing: 0.02em;
   color: var(--brass);
 }
+
+/* --- writing a formulation ------------------------------------------------ */
+
+.picker {
+  font-family: var(--body);
+  font-size: 0.9rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--rule);
+  background: #fff;
+  color: var(--ink);
+}
+.write {
+  padding: 0 1.25rem 1.25rem;
+  border-top: 1px solid var(--rule-soft);
+  margin-top: 0.5rem;
+}
+.write .field {
+  display: block;
+  margin: 1rem 0;
+}
+.write textarea,
+.field input {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  font-family: var(--body);
+  font-size: 0.92rem;
+  line-height: 1.5;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--rule);
+  background: #fff;
+  color: var(--ink);
+  resize: vertical;
+}
+.warn.on-trial {
+  border-left: 3px solid var(--iron);
+  background: var(--iron-soft);
+  padding: 0.75rem 1rem;
+  margin: 0 1.25rem;
+}
+
+/* The invite link: shown once, so it is hard to miss and easy to select. */
+.tokenbox {
+  background: #fff;
+  border: 1px solid var(--rule);
+  padding: 0.6rem 0.7rem;
+  overflow-x: auto;
+  user-select: all;
+}
+.tokenbox code {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.btn.small {
+  font-size: 0.7rem;
+  padding: 0.25rem 0.5rem;
+}

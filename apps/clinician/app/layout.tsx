@@ -5,14 +5,15 @@
  * no dark tokens anywhere. Fonts are the three from the reference file, loaded
  * through next/font/google with real fallback stacks; nothing else is fetched.
  *
- * When sign-in lands, it wraps <Shell> — the Library and Formulate carry no
- * client data, import nothing from the API client, and do not need a session in
- * this pass, so the change is a wrapper around {children}, not a rewrite.
+ * ClinicianSession wraps {children}. It is a client component holding the
+ * Supabase session; the Library pages inside it stay server components and
+ * stay prerendered, because they never ask for it.
  */
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { IBM_Plex_Mono, IBM_Plex_Sans, Newsreader } from 'next/font/google';
 import './globals.css';
+import { ClinicianSession } from '@/lib/api';
 
 const newsreader = Newsreader({
   subsets: ['latin'],
@@ -64,8 +65,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <Link href="/library/modalities">Modalities</Link>
             <Link href="/library/protocols">Protocols</Link>
             <Link href="/formulate">Formulate</Link>
+            <Link href="/invites">Invite</Link>
           </nav>
-          {children}
+          <ClinicianSession>{children}</ClinicianSession>
         </div>
       </body>
     </html>
