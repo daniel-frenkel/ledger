@@ -116,6 +116,21 @@ describe('drafts', () => {
     for (const d of drafts()) expect(d.href, d.file).toBeNull();
   });
 
+  /**
+   * The eval fixture is the answer key for the locating assistant. If it ever
+   * reached the corpus the assistant would be scored on a document it had been
+   * shown, so this is two separate guarantees and both are asserted: it is a
+   * draft, and it has no route.
+   */
+  it('keeps the locating assistant’s answer key out of the corpus', () => {
+    const e = sources().find((d) => d.file === 'eval/locate-notes.md');
+    expect(e, 'docs/theory/eval/locate-notes.md is missing').toBeDefined();
+    expect(e!.status).toMatch(/^DRAFT/);
+    expect(e!.draft).toBe(true);
+    expect(e!.href).toBeNull();
+    expect(corpus().map((d) => d.file)).not.toContain('eval/locate-notes.md');
+  });
+
   it('sourcesIn hides drafts and allSourcesIn does not', () => {
     expect(sourcesIn('tools').map((d) => d.name)).not.toContain('crosswalk-protocols-for-syndromes');
     expect(allSourcesIn('tools').map((d) => d.name)).toContain('crosswalk-protocols-for-syndromes');

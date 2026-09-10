@@ -26,6 +26,8 @@ Identity (email, display name, phone) is **never** stored in the application dat
 
 **7. Language model.** The Anthropic API is called only from `packages/api/src/services/ai.ts`. The prompt receives the *minimum* text needed for the task (one prediction's situation and outcome, or one journal entry the client chose to reflect on), no identifiers, no history, and the response is text only. The endpoints exist (`/v1/ai/why`, `/v1/ai/reflect`) but the client does not call them in milestone 1; when it does, they are opt-in per user and logged as a count, not content.
 
+**8. The locating assistant (disabled until BAA).** `POST /v1/assistant/locate` sends one clinician's note about one client to the Anthropic API, from `packages/api/src/services/ai.ts`. This is the first and only hop where a third party reads client information in prose, and it **ships off**: `ASSISTANT_ENABLED` defaults to false, the route returns 503 with `ASSISTANT_DISABLED` when it is false or `ANTHROPIC_API_KEY` is absent, and no model call is made. It must not be switched on until a BAA with Anthropic covering this traffic is signed, with zero-data-retention confirmed. What the model may return is a fixed structure — sign ids, spans copied out of the note, and gate keys — with no free-text field, so it cannot emit a diagnosis, a label, a floor or a number; every span is checked in code as an exact substring of the note, and a sign with no surviving span is dropped. Floors are computed afterwards, in code, by the same function the browser runs. What is stored is `assistant_runs`: the note's SHA-256, the sign ids, the gate keys, the model id and a duration. The note itself is not stored, not logged, not echoed in an error body, and not written to Sentry — `test/phi-logs.test.ts` and `test/sentry-scrubber.test.ts` seed a note and grep both sinks. Rate limit: 30 runs per clinician per hour.
+
 ## Who can read what
 
 | Table | Client | Clinician (active link) |
@@ -38,16 +40,29 @@ Identity (email, display name, phone) is **never** stored in the application dat
 | `crisis_events` | own rows, read | read if `share_crisis_events` |
 | `clinician_client_links` | rows where they are the client; may update consent | rows where they are the clinician; read only |
 | `devices` | own rows | none |
+| `link_invites` | none — not even with the token in hand | own rows; may create and revoke, never read the token |
+| `formulations` | **none in this version** | own rows, for a client they hold an active link to |
+| `assistant_runs` | none | own rows, for a client they hold an active link to |
 
 Two structural guarantees sit under the policies. Child tables (`body_states`, `reinterpretations`, `journal_entries`, `prediction_priors`) reference their parent with a composite foreign key on `(prediction_id, user_id)` / `(prior_id, user_id)`, so a row cannot be attached to another user's prediction or prior even if a policy were wrong. And `users.role` is not updatable by the API role at all (column-level grant covers only `timezone` and `deleted_at`), so a client cannot promote themselves; a link's two parties are fixed at creation by trigger.
 
 Revoking a link sets `status = 'revoked'`; every clinician policy joins through `status = 'active'`, so revocation is immediate and total.
+
+Three decisions in that table are deliberate and worth stating plainly.
+
+**Formulations are not visible to the client.** A formulation is the clinician's working note, the way a paper chart is, and there is no policy granting a client SELECT on it. That is a defensible clinical choice and an uncomfortable one — the client cannot see what has been written about them — so it is recorded here as a decision rather than left as an omission. If it changes, it changes by adding a policy in a new migration and by designing the screen that presents it, not by widening an existing one.
+
+**There is no directory.** No table maps a clinician to a list of clients they might invite, and no endpoint searches for a person. A link exists only because a clinician created an invite and a client redeemed it. This is why the clinician's client picker shows a truncated UUID: there is no name in the application database to show, by design — identity lives in Supabase Auth and nothing joins the two.
+
+**The client outlives the clinician.** Every client-owned row is owned by the client, not by the link. Revoking a link, or deleting the clinician's account, removes the clinician's read access and leaves the client's ledger untouched and fully theirs. Formulations and assistant runs are the mirror case: they belong to the clinician who wrote them, cascade with the clinician, and are already invisible once the link is not active.
 
 ## Deletion (planned — not in milestone 1)
 
 A client will be able to delete their account. That soft-deletes their `users` row and every child row (`deleted_at`), which RLS treats as gone, and a nightly job hard-deletes soft-deleted rows older than 30 days. The Supabase Auth user is deleted by the same request. Backups age out on the provider's schedule; document that window in the privacy notice.
 
 ## Open items
+
+**The Anthropic BAA gates `ASSISTANT_ENABLED`.** Hop 8 is off and stays off until a BAA covering the locating assistant's traffic is signed and zero-data-retention is confirmed in writing. This is the one switch in the system that moves PHI to a new processor, so it is called out separately from the list below rather than folded into it.
 
 Before any real client uses this: a signed BAA with Supabase (available on paid tiers) and with the hosting provider; the same for Sentry if it's kept in production; a written privacy notice; and a decision about whether the Anthropic call is inside or outside the covered-entity boundary (Anthropic offers a BAA for eligible customers; confirm before enabling the feature for anyone but yourself).
 

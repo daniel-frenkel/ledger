@@ -249,6 +249,23 @@ export type Gates = z.infer<typeof gatesSchema>;
 export const allGatesCleared = (g: Gates): boolean => GATE_KEYS.every((k) => g[k] === true);
 
 /**
+ * The three gates phrased as questions, for the locating assistant.
+ *
+ * The assistant may ask; it may never answer. It returns gate *keys* — the
+ * wording lives here, in code, so the model chooses from an enum of three and
+ * has nowhere to put a sentence of its own. Only the clinician's attestation
+ * clears a gate, and that is a separate field on a separate request.
+ *
+ * Wording follows Step 0 of docs/theory/tools/decision-aid-locating-the-floor.md.
+ */
+export const GATE_QUESTIONS: Readonly<Record<GateKey, string>> = {
+  risk: 'Has acute risk been addressed — suicidality, danger to others, abuse, crisis?',
+  dial: 'Could the dial be reversed — psychosis or mania, meaning running the opposite way?',
+  calibrated:
+    'Is the prior actually false, or is the environment the pathogen? Coercive control and intimate-partner violence screened?',
+} as const;
+
+/**
  * A formulation goes on trial after the second re-aim on the same case —
  * docs/theory-mapping.md §8. Version 1 is the formulation, 2 and 3 are the
  * re-aims, and at 3 the panel says so.
