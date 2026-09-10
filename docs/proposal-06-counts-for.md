@@ -32,7 +32,7 @@ Two items in "What it touches" are **blocked on prompts that have not run**, not
 - **The clinician view's "Discount rate" and "Dismissed misses" rows.** The clinician ledger screen arrives with Prompt 3; there is no furnace profile block to add rows to yet. The numbers exist in `discountRate()` and on `summarizeLedger().discount`, and there is a TODO pointing here in `packages/shared/src/calibration/`.
 - **The research export allowlist.** That module arrives with Prompt 8 (proposal 03). `counts_for` goes in it when it exists; there is a TODO pointing here in `docs/proposal-03-research-readiness.md`.
 
-One item is **deliberately not done**: the IndexedDB store version is not bumped. The stores hold whole documents with no per-field index, so an added optional field needs no migration, and `upgrade()` in `apps/web/src/db/` calls `createObjectStore` unconditionally — a version bump would throw in every browser that already has the database. Ruled and confirmed 2026-09-10.
+The IndexedDB decision is stated in "What it touches" above. The reason it is not merely unnecessary but wrong: `upgrade()` in `apps/web/src/db/` calls `createObjectStore` unconditionally, so a version bump would throw in every browser that already has the database. Ruled and confirmed 2026-09-10.
 
 ## What it does not do
 
