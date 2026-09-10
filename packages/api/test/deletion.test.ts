@@ -265,19 +265,54 @@ describe('the purge job', () => {
     expect(await count('users', `WHERE id = '${CLIENT_A}'`)).toBe(1);
   });
 
-  it('removes everything past it, and the cascade takes the rest', async () => {
+  it('leaves a row the client deleted on its own — the unit is the account', async () => {
+    await seed();
+    // One prediction removed by the client, the account still live.
+    await admin.query(`UPDATE predictions SET deleted_at = now() - interval '90 days'`);
+
+    expect((await purgeDeleted()).total).toBe(0);
+    expect(await count('predictions')).toBe(1);
+  });
+
+  it('removes every table, in an order the foreign keys allow', async () => {
     await seed();
     await del();
     await age(31);
 
     const r = await purgeDeleted();
+    expect(r.users).toBe(1);
     expect(r.total).toBeGreaterThan(0);
-    expect(r.removed['users']).toBe(1);
 
-    for (const t of ['predictions', 'priors', 'body_states', 'reinterpretations', 'journal_entries', 'crisis_events', 'prediction_priors']) {
+    // Nothing cascades from users in this schema, so "empty afterwards" is the
+    // only check that would notice a table the job forgot to name.
+    for (const t of [
+      'predictions',
+      'priors',
+      'body_states',
+      'reinterpretations',
+      'journal_entries',
+      'crisis_events',
+      'prediction_priors',
+      'devices',
+      'clinician_client_links',
+    ]) {
       expect(await count(t), t).toBe(0);
     }
     expect(await count('users', `WHERE id = '${CLIENT_A}'`)).toBe(0);
+  });
+
+  it('takes the link with it, from either side', async () => {
+    const made = await app.inject({ method: 'POST', url: '/v1/invites', headers: asUser(CLINICIAN, 'clinician'), payload: {} });
+    const { token } = made.json() as { token: string };
+    await app.inject({ method: 'POST', url: '/v1/invites/redeem', headers: asUser(CLIENT_A), payload: { token } });
+
+    await del(CLIENT_A);
+    await age(31);
+    await purgeDeleted();
+
+    // The clinician keeps nothing pointing at an account that no longer exists.
+    expect(await count('clinician_client_links')).toBe(0);
+    expect(await count('users', `WHERE id = '${CLINICIAN}'`)).toBe(1);
   });
 
   it('leaves a live account alone', async () => {
@@ -289,6 +324,7 @@ describe('the purge job', () => {
     await purgeDeleted();
     expect(await count('users', `WHERE id = '${CLIENT_B}'`)).toBe(1);
     expect(await count('predictions', `WHERE user_id = '${CLIENT_B}'`)).toBe(1);
+    expect(await count('predictions', `WHERE user_id = '${CLIENT_A}'`)).toBe(0);
   });
 
   it('is idempotent', async () => {

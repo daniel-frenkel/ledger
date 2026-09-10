@@ -946,18 +946,19 @@ describe('0003 invites and formulations', () => {
     });
   });
 
-  it('#45 a client cannot hard-delete their own soft-deleted rows either', async () => {
-    await admin.query(`UPDATE predictions SET deleted_at = now() - interval '90 days'`);
+  it('#45 a client cannot hard-delete rows of their own deleted account either', async () => {
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '90 days' WHERE id = $1`, [CLIENT_A]);
     // Past the grace period, but the client is not the system role.
     await as(CLIENT_A, 'client', async (c) => {
       expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(0);
+      expect((await c.query(`DELETE FROM users WHERE id = $1`, [CLIENT_A])).rowCount).toBe(0);
     });
     expect(Number((await admin.query(`SELECT count(*) n FROM predictions`)).rows[0]!.n)).toBe(1);
   });
 
   it('#46 a clinician cannot hard-delete a linked client’s rows', async () => {
     await linkActive({ predictions: true });
-    await admin.query(`UPDATE predictions SET deleted_at = now() - interval '90 days'`);
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '90 days' WHERE id = $1`, [CLIENT_A]);
     await as(CLINICIAN, 'clinician', async (c) => {
       expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(0);
     });
@@ -978,20 +979,21 @@ describe('0003 invites and formulations', () => {
       }
     };
 
-    // Live: refused even as system.
+    // Live account: refused even as system.
     await asSystem(async (c) => {
       expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(0);
     });
 
-    // Soft-deleted but inside the window: still refused.
-    await admin.query(`UPDATE predictions SET deleted_at = now() - interval '10 days'`);
+    // Account deleted but inside the window: still refused.
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '10 days' WHERE id = $1`, [CLIENT_A]);
     await asSystem(async (c) => {
       expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(0);
     });
 
-    // Past the window: allowed.
-    await admin.query(`UPDATE predictions SET deleted_at = now() - interval '31 days'`);
+    // Past the window: allowed. prediction_priors first — nothing cascades.
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '31 days' WHERE id = $1`, [CLIENT_A]);
     await asSystem(async (c) => {
+      await c.query(`DELETE FROM prediction_priors`);
       expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(1);
     });
   });
@@ -1022,18 +1024,19 @@ describe('0003 invites and formulations', () => {
       for (const t of TABLES) expect(await count(c, `SELECT count(*) n FROM ${t}`), t).toBe(0);
     });
 
-    // Soft-deleted but inside the window: still invisible.
-    await admin.query(`UPDATE predictions SET deleted_at = now() - interval '10 days'`);
+    // Account deleted but inside the window: still invisible.
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '10 days' WHERE id = $1`, [CLIENT_A]);
     await asSystem(async (c) => {
       expect(await count(c, `SELECT count(*) n FROM predictions`)).toBe(0);
     });
 
     // Past the window: visible, because it is about to be deleted.
-    await admin.query(`UPDATE predictions SET deleted_at = now() - interval '31 days'`);
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '31 days' WHERE id = $1`, [CLIENT_A]);
     await asSystem(async (c) => {
       expect(await count(c, `SELECT count(*) n FROM predictions`)).toBe(1);
-      // And still nothing from a table with no purgeable row in it.
-      expect(await count(c, `SELECT count(*) n FROM journal_entries`)).toBe(0);
+      expect(await count(c, `SELECT count(*) n FROM journal_entries`)).toBe(2);
+      // CLIENT_B is live, so nothing of theirs is visible even now.
+      expect(await count(c, `SELECT count(*) n FROM users WHERE id = $1`, [CLIENT_B])).toBe(0);
     });
   });
 });
