@@ -11,8 +11,10 @@ psilocybin frame); one thing compiles at a time. The lever each modality pulls i
 - **Master** — the identity; the thousand deliberate-practice hours. One modality only.
 - **Fluent** — working command; the daily drivers used in every case.
 - **Deep** — a second certification, added post-licensure, one choice.
-- **Working literacy / Conversant** — concepts used, moves borrowed deliberately, referrals
-  made wisely, exams passed. Most of the catalog lives here, on purpose.
+- **Literacy** — concepts used, moves borrowed deliberately, referrals made wisely, exams
+  passed. Most of the catalog lives here, on purpose. In the worked table this tier is
+  written two ways — "Working literacy" (concepts used daily) and "Conversant" (formulate
+  and refer well) — but those are shades of one tier, not two; the app stores one value.
 
 ## An example stack
 

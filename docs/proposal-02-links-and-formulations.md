@@ -12,6 +12,13 @@
 - Rate limits key on the authenticated user id, not the client IP.
 - `/join` renders the sign-in flow itself rather than redirecting (a redirect drops the fragment), reads the token into memory on mount, and clears it from the address bar with `replaceState`.
 
+**Status update, 11 Sept 2026 — Parts 3 and 4 (PRs #19, #20):**
+- Scoring lives in `packages/shared/src/floors/`, not the vocabulary module. Observation ids are stable names (e.g. `body-signal-as-world`), not integers; the API rejects unknown ids with 422. Gate ids are `risk`, `dial`, `calibrated`.
+- The clinician app has its own session (email OTP) and assembles the invite URL client-side, shown once.
+- The client picker shows a truncated UUID; no names by design until case labels (proposal 05).
+- `assistant_runs` gained `gate_question_ids` beyond the column list in §5, so the "assistant never clears a gate" audit has something to check. Row shape is asserted column-by-column in `assistant.test.ts`.
+- The assistant migration is `0004`, not part of `0003`. `ASSISTANT_ENABLED` defaults false; the route returns 503 with no model call. The system prompt is read from `docs/theory/` on disk, so the deployment image must carry it (Prompt 2).
+
 **Why one proposal.** The three pieces share a migration and a trust model. The product is clinician-facing; the clinician invites the client; the clinician formulates; the assistant helps the clinician formulate. Every write path below is either the clinician acting on their own working notes, or the client acting on their own consent. There is still no path by which a clinician writes into a client's data beyond `safe_to_test` and clinician-origin priors.
 
 ---
@@ -122,7 +129,7 @@ The system prompt contains, verbatim from `docs/theory/`: the locator's nine obs
 The note is PHI and this is the first hop where a third party reads client information in prose.
 
 - `ASSISTANT_ENABLED` env var, default false. The route returns 503 with a plain message ("The locating assistant is off until the data agreement is in place") when it is false or `ANTHROPIC_API_KEY` is absent. It ships off.
-- Table `assistant_runs`: `id, clinician_id, client_id, note_sha256, observation_ids, model, latency_ms, created_at`. No note text, no evidence spans. The note is not logged anywhere; the PHI-in-logs test gets a case for this route.
+- Table `assistant_runs`: `id, clinician_id, client_id, note_sha256, observation_ids, gate_question_ids, model, latency_ms, created_at`. No note text, no evidence spans. The note is not logged anywhere; the PHI-in-logs test gets a case for this route.
 - `docs/data-path.md` gets hop 8: clinician note → API → Anthropic (BAA, zero-data-retention), with the open item that the BAA must be signed before `ASSISTANT_ENABLED` is ever true.
 - Rate limit: 30 runs per clinician per hour.
 

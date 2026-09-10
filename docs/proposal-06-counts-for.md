@@ -1,6 +1,6 @@
 # Proposal 06 — "How much does this one count?"
 
-**Status:** approved for build (Sept 2026). One new field on `predictions`; additive migration `0008_counts_for.sql`. This changes what the client sees on the resolve screen and adds a number to the ledger, so it is a proposal rather than a prompt.
+**Status:** approved for build (Sept 2026). One new field on `predictions`; additive migration `0006_counts_for.sql` (shipped as PR #22). This changes what the client sees on the resolve screen and adds a number to the ledger, so it is a proposal rather than a prompt.
 
 **Why.** The furnace's *reinterpret* move — accept the disconfirming event, then re-describe it until it no longer counts — is what Kube and Rief's group measures as cognitive immunization (Kube et al. 2019; the Immunization Scale, Ewen, Rief & Wilhelm 2022). The ledger already captures the reinterpretation as text. It does not capture the *amount* of the discount. One number, asked at the moment of resolution, turns the reinterpret move into a quantity the ledger can read back — "of your nine misses, you said six didn't fully count" — which is a sentence no client has been shown about themselves.
 
@@ -23,7 +23,7 @@ In `packages/shared/src/calibration/`:
 
 ## What it touches
 
-`predictions` schema, the `predictions_summary` view (rebuilt DROP/CREATE as in 0002; `counts_for` is a structured field and is included in the summary a clinician with `share_predictions = false` can see, because it carries no prose), the shared zod schema and codec, the IndexedDB store version and sync, the resolve screen in `apps/web`, the research export allowlist (add `counts_for`), and the calibration tests. The Expo client is parked and is not updated.
+`predictions` schema, the `predictions_summary` view (rebuilt DROP/CREATE as in 0002; `counts_for` is a structured field and is included in the summary a clinician with `share_predictions = false` can see, because it carries no prose), the shared zod schema and codec (the refine lives on `predictionSchema` so sync rejects a hit carrying `counts_for`), sync (the IndexedDB store version is not bumped: stores hold whole documents with no per-field index, so existing rows simply read the field as absent), the resolve screen in `apps/web`, the research export allowlist (add `counts_for`), and the calibration tests. The Expo client is parked and is not updated.
 
 ## What it does not do
 
