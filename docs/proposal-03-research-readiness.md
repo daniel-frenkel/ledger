@@ -13,6 +13,9 @@
 
 ## 2. `measures`
 
+> **Built early, in migration 0006 with Prompt 14.** The table exists with all eleven instruments in the enum; only `ims` is wired, with its three published subscales. Prompt 8 wires the rest and adds `app_version` / `received_at`. **TODO for Prompt 8:** add `counts_for` to the research export allowlist — proposal 06 asks for it and the export module does not exist yet.
+
+
 | column | type | notes |
 |---|---|---|
 | `id` | uuid | v7 |

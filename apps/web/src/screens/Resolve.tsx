@@ -33,6 +33,7 @@ import { crisisGate } from '@/crisis/gate';
 import { newId, nowIso } from '@/ids';
 import { requestSync } from '@/sync';
 import { Button, Card, Choice, Divider, Field, H1, H2, P, Scale, Screen, Small } from '@/ui';
+import { COUNTS_FOR, COUNTS_FOR_MAX, COUNTS_FOR_MIN, COUNTS_FOR_STEP } from '@ledger/shared';
 import { CrisisCard } from '@/ui/CrisisCard';
 
 const VERDICT_LABELS: Record<OutcomeVerdict, string> = { hit: 'It happened', partial: 'Partly', miss: 'It didn’t', unclear: 'Can’t say' };
@@ -68,6 +69,7 @@ export default function Resolve() {
   const [ownPart, setOwnPart] = useState<OwnPart | null>(null);
   const [exitActual, setExitActual] = useState<ExitMove | null>(null);
   const [exitNote, setExitNote] = useState('');
+  const [countsFor, setCountsFor] = useState<number | null>(null);
   const [reinterp, setReinterp] = useState('');
   const [abandonReason, setAbandonReason] = useState<AbandonReason | null>(null);
   // body after
@@ -101,6 +103,9 @@ export default function Resolve() {
     back();
   };
 
+  /** Only a miss or a partial. A hit is not discounted and the question would be noise. */
+  const asksCountsFor = verdict === 'miss' || verdict === 'partial';
+
   const save = async () => {
     setErr(null);
     const parsed = resolvePredictionInput.safeParse({
@@ -110,6 +115,7 @@ export default function Resolve() {
       surpriseRating: surprise,
       presentForIt: present === 'yes',
       ownPart: ownPart ?? undefined,
+      countsFor: asksCountsFor && countsFor != null ? countsFor : undefined,
       exitActual: exitActual ?? undefined,
       exitActualNote: exitNote.trim() || undefined,
       reinterpretation: reinterp.trim() || undefined,
@@ -128,6 +134,7 @@ export default function Resolve() {
       surpriseRating: parsed.data.surpriseRating,
       presentForIt: parsed.data.presentForIt,
       ownPart: parsed.data.ownPart ?? null,
+      countsFor: parsed.data.countsFor ?? null,
       exitActual: parsed.data.exitActual ?? null,
       exitActualNote: parsed.data.exitActualNote ?? null,
       clientUpdatedAt: now,
@@ -240,6 +247,33 @@ export default function Resolve() {
             value={present}
             onChange={setPresent}
           />
+
+          {/*
+            Asked only when the forecast missed, after the verdict and the
+            surprise rating and before the reinterpretation below — so the
+            number is not anchored by the story about to be written. Skippable:
+            no answer is no answer, and is never read as a hundred.
+          */}
+          {asksCountsFor ? (
+            <>
+              <Scale
+                label={COUNTS_FOR.label}
+                hint={COUNTS_FOR.hint}
+                min={COUNTS_FOR_MIN}
+                max={COUNTS_FOR_MAX}
+                step={COUNTS_FOR_STEP}
+                value={countsFor}
+                onChange={setCountsFor}
+              />
+              {countsFor != null ? (
+                <Small>
+                  <button type="button" className="linklike" onClick={() => setCountsFor(null)}>
+                    {COUNTS_FOR.skip}
+                  </button>
+                </Small>
+              ) : null}
+            </>
+          ) : null}
 
           {hadBodyBefore ? (
             <>

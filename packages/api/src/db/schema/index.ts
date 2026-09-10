@@ -23,6 +23,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   real,
   pgEnum,
   pgTable,
@@ -172,6 +173,12 @@ export const predictions = pgTable(
     presentForIt: boolean('present_for_it'),
     /** Self-report of the client's part. Weak per entry; the drift is the data. */
     ownPart: ownPart('own_part'),
+    /**
+     * "How much does this one count?" — 0 to 100, asked only on a miss or a
+     * partial. Nullable and skippable: unanswered is null, never 100. Added
+     * in 0006.
+     */
+    countsFor: smallint('counts_for'),
     /** "Did you?" — the exit actually taken. */
     exitActual: exitMove('exit_actual'),
     exitActualNoteEnc: bytea('exit_actual_note_enc'),
@@ -194,6 +201,7 @@ export const predictions = pgTable(
       .where(sql`${t.resolvedAt} IS NULL AND ${t.abandonedAt} IS NULL AND ${t.deletedAt} IS NULL`),
     check('predictions_confidence_range', sql`${t.confidence} BETWEEN 0 AND 100`),
     check('predictions_surprise_range', sql`${t.surpriseRating} IS NULL OR ${t.surpriseRating} BETWEEN 0 AND 10`),
+    check('predictions_counts_for_range', sql`${t.countsFor} IS NULL OR ${t.countsFor} BETWEEN 0 AND 100`),
     check('predictions_resolved_has_verdict', sql`${t.resolvedAt} IS NULL OR ${t.outcomeVerdict} IS NOT NULL`),
     check('predictions_resolved_xor_abandoned', sql`NOT (${t.resolvedAt} IS NOT NULL AND ${t.abandonedAt} IS NOT NULL)`),
     check('predictions_abandoned_has_reason', sql`${t.abandonedAt} IS NULL OR ${t.abandonReason} IS NOT NULL`),
@@ -583,6 +591,48 @@ export const stackGoals = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// measures — totals and subscales from published instruments
+//
+// Item-level responses are deliberately absent. Some items are sensitive in a
+// way a total is not (PHQ-9 item 9 in particular) and storing them would put
+// the crisis rules in the position of needing to read them. Totals and
+// subscales only; no instrument's item text appears anywhere in this repo.
+// ---------------------------------------------------------------------------
+export const measures = pgTable(
+  'measures',
+  {
+    id: uuid('id').primaryKey(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Null when the client administered it to themselves. */
+    clinicianId: uuid('clinician_id').references(() => users.id, { onDelete: 'set null' }),
+    instrument: text('instrument').notNull(),
+    score: numeric('score').notNull(),
+    /** Numeric values keyed by the instrument's published subscale names. No prose. */
+    subscales: jsonb('subscales'),
+    administeredAt: ts('administered_at').notNull(),
+    administeredBy: text('administered_by').notNull(),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('measures_client_instrument_idx').on(t.clientId, t.instrument, t.administeredAt),
+    check(
+      'measures_instrument_known',
+      sql`${t.instrument} IN ('phq9','gad7','pcl5','pdss','isi','ocir','shai','pg13','ims','sus','umars')`,
+    ),
+    check('measures_administered_by_known', sql`${t.administeredBy} IN ('client','clinician')`),
+    check('measures_subscales_object', sql`${t.subscales} IS NULL OR jsonb_typeof(${t.subscales}) = 'object'`),
+    check(
+      'measures_administered_by_matches',
+      sql`(${t.administeredBy} = 'clinician' AND ${t.clinicianId} IS NOT NULL)
+        OR (${t.administeredBy} = 'client' AND ${t.clinicianId} IS NULL)`,
+    ),
+    check('measures_not_self', sql`${t.clinicianId} IS NULL OR ${t.clinicianId} <> ${t.clientId}`),
+  ],
+);
+
 export type LinkRow = typeof clinicianClientLinks.$inferSelect;
 export type DeviceRow = typeof devices.$inferSelect;
 export type LinkInviteRow = typeof linkInvites.$inferSelect;
@@ -590,3 +640,4 @@ export type FormulationRow = typeof formulations.$inferSelect;
 export type AssistantRunRow = typeof assistantRuns.$inferSelect;
 export type ClinicianStackRow = typeof clinicianStacks.$inferSelect;
 export type StackGoalRow = typeof stackGoals.$inferSelect;
+export type MeasureRow = typeof measures.$inferSelect;
