@@ -10,6 +10,8 @@ import sentryPlugin from './plugins/sentry.js';
 import health from './routes/health.js';
 import syncRoute from './routes/sync.js';
 import links from './routes/links.js';
+import invites from './routes/invites.js';
+import formulations from './routes/formulations.js';
 import ai from './routes/ai.js';
 
 export async function build(opts: { logger?: FastifyInstance['log'] } = {}): Promise<FastifyInstance> {
@@ -32,6 +34,8 @@ export async function build(opts: { logger?: FastifyInstance['log'] } = {}): Pro
   await app.register(health);
   await app.register(syncRoute);
   await app.register(links);
+  await app.register(invites);
+  await app.register(formulations);
   await app.register(ai);
 
   // Default error handler when Sentry is off: never leak internals.

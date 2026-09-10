@@ -22,6 +22,13 @@ export const REDACT_PATHS = [
   'userId',
   'user_id',
   'email',
+  // An invite token is a bearer credential, and its hash is the lookup key.
+  // Neither is ever logged deliberately; this is the backstop.
+  'token',
+  'tokenHash',
+  'token_hash',
+  'note',
+  'falsify',
   'situation',
   'expectedOutcome',
   'actualOutcome',
@@ -46,6 +53,11 @@ export const REDACT_PATHS = [
   '*.userId',
   '*.user_id',
   '*.email',
+  '*.token',
+  '*.tokenHash',
+  '*.token_hash',
+  '*.note',
+  '*.falsify',
 ];
 
 export function loggerOptions(): LoggerOptions {
