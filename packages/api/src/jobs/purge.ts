@@ -22,9 +22,14 @@
  * were wrong tomorrow, the database would still refuse.
  *
  * The unit is the account. A row a client soft-deleted on its own — one
- * prediction they removed — is not purged here; that is a separate retention
- * question, and doing it row by row would mean deleting a parent whose
- * children are still live.
+ * prediction they removed — is not purged here yet; see docs/data-path.md,
+ * where the rule for those is decided and queued.
+ *
+ * **The users row is never deleted.** `formulations` and `assistant_runs` are
+ * the clinician's record of their own clinical reasoning, and both cascade
+ * from users — deleting the row would take them silently. So the row is
+ * scrubbed to a tombstone instead: its id and its deleted_at survive, and
+ * nothing else on it says anything about the person.
  */
 import cron from 'node-cron';
 import { inArray, or, sql } from 'drizzle-orm';
@@ -50,8 +55,14 @@ const PURGE_ORDER = [
   { name: 'devices', table: schema.devices },
 ] as const;
 
+/**
+ * What `timezone` becomes. It is NOT NULL, so it cannot be nulled, and a real
+ * zone is a coarse location — this is the neutral value that says nothing.
+ */
+export const SCRUBBED_TIMEZONE = 'UTC';
+
 export interface PurgeResult {
-  /** Accounts removed. */
+  /** Accounts scrubbed to a tombstone. */
   users: number;
   /** Rows removed per table. Zero-count tables are omitted. */
   removed: Record<string, number>;
@@ -88,31 +99,30 @@ export async function purgeDeleted(): Promise<PurgeResult> {
       total += n;
     }
 
-    // An invite has to go rather than be left behind: redeemed_by is
-    // ON DELETE SET NULL, and the redeem-pair CHECK refuses a redeemed invite
-    // with a null redeemer, so the users delete would fail with it still there.
+    // A consumed invite is a token hash and two timestamps, not a clinical
+    // record, and it names the person who redeemed it. It goes.
     const invites = await tx
       .delete(schema.linkInvites)
       .where(or(inArray(schema.linkInvites.clinicianId, ids), inArray(schema.linkInvites.redeemedBy, ids)));
     if ((invites.rowCount ?? 0) > 0) removed['link_invites'] = invites.rowCount ?? 0;
     total += invites.rowCount ?? 0;
 
-    // A link has two parties; either being purged takes the row.
-    const links = await tx
-      .delete(schema.clinicianClientLinks)
-      .where(
-        or(
-          inArray(schema.clinicianClientLinks.clientId, ids),
-          inArray(schema.clinicianClientLinks.clinicianId, ids),
-        ),
-      );
-    if ((links.rowCount ?? 0) > 0) removed['clinician_client_links'] = links.rowCount ?? 0;
-    total += links.rowCount ?? 0;
+    // The link itself stays. formulations.link_id is NOT NULL and cascades
+    // from it, so deleting a link deletes the clinician's formulations with
+    // it. It was revoked when the account was deleted, which is what makes it
+    // inert; it is not the client's data to destroy.
 
-    const u = await tx.delete(schema.users).where(inArray(schema.users.id, ids));
+    // The tombstone. Not a delete: formulations and assistant_runs cascade
+    // from this row and are the clinician's record, not the client's data.
+    // What is left afterwards is an id, a deleted_at, and nothing that says
+    // anything about the person — see TOMBSTONE_COLUMNS in the test, which
+    // fails if a column is added to users without a decision about it.
+    const u = await tx
+      .update(schema.users)
+      .set({ timezone: SCRUBBED_TIMEZONE })
+      .where(inArray(schema.users.id, ids));
     const users = u.rowCount ?? 0;
-    if (users > 0) removed['users'] = users;
-    total += users;
+    if (users > 0) removed['users_scrubbed'] = users;
 
     return { users, removed, total };
   });

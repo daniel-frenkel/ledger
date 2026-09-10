@@ -56,6 +56,21 @@ async function asCommit<T>(userId: string, role: 'client' | 'clinician', fn: (c:
   }
 }
 
+/** The purge job's context: system role, no user id, the grace period set. */
+async function asSystemTx<T>(fn: (c: pg.Client) => Promise<T>): Promise<T> {
+  await api.query('BEGIN');
+  try {
+    await api.query(
+      `SELECT set_config('request.role', 'system', true),
+              set_config('request.user_id', '', true),
+              set_config('app.deletion_grace_days', '30', true)`,
+    );
+    return await fn(api);
+  } finally {
+    await api.query('ROLLBACK');
+  }
+}
+
 const count = async (c: pg.Client, sql: string, params: unknown[] = []) => Number((await c.query(sql, params)).rows[0]?.n ?? 0);
 
 beforeAll(async () => {
@@ -952,7 +967,10 @@ describe('0003 invites and formulations', () => {
     // Past the grace period, but the client is not the system role.
     await as(CLIENT_A, 'client', async (c) => {
       expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(0);
-      expect((await c.query(`DELETE FROM users WHERE id = $1`, [CLIENT_A])).rowCount).toBe(0);
+      // And nobody deletes a users row at all: there is no grant, so this is
+      // an error rather than zero rows. formulations and assistant_runs
+      // cascade from it, and they are the clinician's record.
+      await expect(c.query(`DELETE FROM users WHERE id = $1`, [CLIENT_A])).rejects.toThrow(/permission denied/i);
     });
     expect(Number((await admin.query(`SELECT count(*) n FROM predictions`)).rows[0]!.n)).toBe(1);
   });
@@ -965,20 +983,8 @@ describe('0003 invites and formulations', () => {
     });
   });
 
-  it('#47 the system role deletes only soft-deleted rows past the grace period', async () => {
-    const asSystem = async <T,>(fn: (c: pg.Client) => Promise<T>): Promise<T> => {
-      await api.query('BEGIN');
-      try {
-        await api.query(
-          `SELECT set_config('request.role', 'system', true),
-                  set_config('request.user_id', '', true),
-                  set_config('app.deletion_grace_days', '30', true)`,
-        );
-        return await fn(api);
-      } finally {
-        await api.query('ROLLBACK');
-      }
-    };
+  it('#47 the system role deletes only rows of a deleted account past the grace period', async () => {
+    const asSystem = asSystemTx;
 
     // Live account: refused even as system.
     await asSystem(async (c) => {
@@ -1002,25 +1008,41 @@ describe('0003 invites and formulations', () => {
     });
   });
 
-  it('#48 the system role reads only what it may purge, and nothing else', async () => {
+  it('#48 the system role scrubs a deleted user and cannot touch a live one', async () => {
+    const scrub = (uid: string) =>
+      asSystemTx(async (c) => (await c.query(`UPDATE users SET timezone = 'UTC' WHERE id = $1`, [uid])).rowCount);
+
+    // Live: no rows. The policy's USING is app_purgeable_user(id).
+    expect(await scrub(CLIENT_A)).toBe(0);
+
+    // Deleted but inside the grace period: still no rows.
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '10 days' WHERE id = $1`, [CLIENT_A]);
+    expect(await scrub(CLIENT_A)).toBe(0);
+
+    // Past it: the scrub lands, and only on that row.
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '31 days' WHERE id = $1`, [CLIENT_A]);
+    expect(await scrub(CLIENT_A)).toBe(1);
+    expect(await scrub(CLIENT_B)).toBe(0);
+  });
+
+  it('#49 the system role cannot un-delete a user it scrubbed', async () => {
+    await admin.query(`UPDATE users SET deleted_at = now() - interval '31 days' WHERE id = $1`, [CLIENT_A]);
+    // WITH CHECK is the same predicate as USING, so a row cannot be updated
+    // out of the purgeable set — clearing deleted_at would do exactly that.
+    await asSystemTx(async (c) => {
+      await expect(c.query(`UPDATE users SET deleted_at = NULL WHERE id = $1`, [CLIENT_A])).rejects.toThrow(
+        /row-level security/i,
+      );
+    });
+  });
+
+  it('#50 the system role reads only what it may purge, and nothing else', async () => {
     // It needs to read: a DELETE whose WHERE touches a column has SELECT
     // policies applied to it too, so a system role that could read nothing
     // would delete nothing. The predicate is the same one, so what it can see
-    // is exactly what it can destroy — a live row stays invisible to it, and a
-    // bug in the purge job cannot become a cross-user read.
-    const asSystem = async <T,>(fn: (c: pg.Client) => Promise<T>): Promise<T> => {
-      await api.query('BEGIN');
-      try {
-        await api.query(
-          `SELECT set_config('request.role', 'system', true),
-                  set_config('request.user_id', '', true),
-                  set_config('app.deletion_grace_days', '30', true)`,
-        );
-        return await fn(api);
-      } finally {
-        await api.query('ROLLBACK');
-      }
-    };
+    // is exactly what it can destroy — a live account stays invisible to it,
+    // and a bug in the purge job cannot become a cross-user read.
+    const asSystem = asSystemTx;
     const TABLES = ['predictions', 'priors', 'journal_entries', 'body_states', 'reinterpretations'];
 
     // Live rows: invisible.

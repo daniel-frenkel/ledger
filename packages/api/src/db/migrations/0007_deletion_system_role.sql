@@ -74,9 +74,9 @@ GRANT EXECUTE ON FUNCTION app_purgeable_user(uuid) TO ledger_api;
 -- what keeps a bug in the job from becoming a cross-user read.
 -- ---------------------------------------------------------------------------
 --> statement-breakpoint
-GRANT DELETE ON users, predictions, priors, body_states, reinterpretations,
-  journal_entries, crisis_events, devices, clinician_client_links,
-  link_invites TO ledger_api;
+-- users is deliberately absent, and so is clinician_client_links. See below.
+GRANT DELETE ON predictions, priors, body_states, reinterpretations,
+  journal_entries, crisis_events, devices, link_invites TO ledger_api;
 
 -- ---------------------------------------------------------------------------
 -- FIRST: take the verb back from everyone else.
@@ -116,13 +116,7 @@ CREATE POLICY journal_entries_delete_system_only ON journal_entries AS RESTRICTI
 CREATE POLICY crisis_events_delete_system_only ON crisis_events AS RESTRICTIVE
   FOR DELETE TO ledger_api USING (app_role() = 'system');
 --> statement-breakpoint
-CREATE POLICY links_delete_system_only ON clinician_client_links AS RESTRICTIVE
-  FOR DELETE TO ledger_api USING (app_role() = 'system');
---> statement-breakpoint
 CREATE POLICY link_invites_delete_system_only ON link_invites AS RESTRICTIVE
-  FOR DELETE TO ledger_api USING (app_role() = 'system');
---> statement-breakpoint
-CREATE POLICY users_delete_system_only ON users AS RESTRICTIVE
   FOR DELETE TO ledger_api USING (app_role() = 'system');
 --> statement-breakpoint
 -- prediction_priors already had DELETE granted, from 0001, and its FOR ALL
@@ -178,14 +172,6 @@ CREATE POLICY crisis_events_system_purge_read ON crisis_events FOR SELECT TO led
 CREATE POLICY devices_system_purge ON devices FOR DELETE TO ledger_api
   USING (app_purgeable_user(user_id));
 --> statement-breakpoint
--- A link has two parties. Either being purged takes the row: the other party
--- keeps nothing that points at an account that no longer exists.
-CREATE POLICY links_system_purge ON clinician_client_links FOR DELETE TO ledger_api
-  USING (app_purgeable_user(client_id) OR app_purgeable_user(clinician_id));
---> statement-breakpoint
-CREATE POLICY links_system_purge_read ON clinician_client_links FOR SELECT TO ledger_api
-  USING (app_purgeable_user(client_id) OR app_purgeable_user(clinician_id));
---> statement-breakpoint
 -- An invite has to be deleted rather than left behind. `redeemed_by` is
 -- ON DELETE SET NULL, and link_invites_redeem_pair requires redeemed_at and
 -- redeemed_by to be null or not-null together — so nulling the redeemer of a
@@ -197,13 +183,39 @@ CREATE POLICY link_invites_system_purge ON link_invites FOR DELETE TO ledger_api
 CREATE POLICY link_invites_system_purge_read ON link_invites FOR SELECT TO ledger_api
   USING (app_purgeable_user(clinician_id) OR app_purgeable_user(redeemed_by));
 
---> statement-breakpoint
--- users last, and its own row rather than a child's.
-CREATE POLICY users_system_purge ON users FOR DELETE TO ledger_api
-  USING (app_purgeable_user(id));
+-- ---------------------------------------------------------------------------
+-- users is never hard-deleted. It becomes a tombstone.
+--
+-- Two things point at a client's user row that are not the client's data:
+-- `formulations` and `assistant_runs` are the clinician's record of their own
+-- clinical reasoning, and both foreign-key to users with ON DELETE CASCADE.
+-- Deleting the row would take them silently — not block on a constraint, take
+-- them — and a clinician's chart is not the client's to delete.
+--
+-- So the row survives with its id and its deleted_at and nothing else that
+-- says anything about the person. There is no DELETE grant on users and no
+-- DELETE policy, which is the strongest form of "never": the verb is absent
+-- rather than merely restricted.
+--
+-- `clinician_client_links` is exempt for the same reason at one remove:
+-- `formulations.link_id` is NOT NULL and cascades from it, so deleting a link
+-- deletes the formulations written against it. The link stays, revoked.
+-- ---------------------------------------------------------------------------
 --> statement-breakpoint
 CREATE POLICY users_system_purge_read ON users FOR SELECT TO ledger_api
   USING (app_purgeable_user(id));
+--> statement-breakpoint
+-- The scrub, and the only thing the system role may do to a user row. USING
+-- and WITH CHECK are the same predicate, so it can neither reach a live
+-- account nor turn a tombstone back into one: app_purgeable_user() requires
+-- deleted_at set and past the grace period, before and after.
+--
+-- Which columns may move is a column-level GRANT, not a policy: 0001 grants
+-- UPDATE (timezone, deleted_at) on users and nothing else, so the scrub can
+-- touch those and no others however this policy is written.
+CREATE POLICY users_system_scrub ON users FOR UPDATE TO ledger_api
+  USING (app_purgeable_user(id))
+  WITH CHECK (app_purgeable_user(id));
 
 -- ---------------------------------------------------------------------------
 -- Push tokens, which cannot wait for the grace period.

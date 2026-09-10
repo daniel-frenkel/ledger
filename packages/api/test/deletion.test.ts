@@ -13,7 +13,7 @@ import pg from 'pg';
 import { closeDb } from '../src/db/client.js';
 import { AuthAdminError, setAuthAdmin } from '../src/auth-admin.js';
 import { DELETION_UNAVAILABLE_CODE } from '../src/routes/me.js';
-import { purgeDeleted } from '../src/jobs/purge.js';
+import { SCRUBBED_TIMEZONE, purgeDeleted } from '../src/jobs/purge.js';
 import {
   ADMIN_URL,
   CLIENT_A,
@@ -274,7 +274,7 @@ describe('the purge job', () => {
     expect(await count('predictions')).toBe(1);
   });
 
-  it('removes every table, in an order the foreign keys allow', async () => {
+  it('removes every table of the client’s own, in an order the foreign keys allow', async () => {
     await seed();
     await del();
     await age(31);
@@ -294,29 +294,97 @@ describe('the purge job', () => {
       'crisis_events',
       'prediction_priors',
       'devices',
-      'clinician_client_links',
       'link_invites',
     ]) {
       expect(await count(t), t).toBe(0);
     }
-    expect(await count('users', `WHERE id = '${CLIENT_A}'`)).toBe(0);
   });
 
-  it('takes the link with it, from either side', async () => {
+  it('leaves a tombstone rather than deleting the user', async () => {
+    await seed();
+    await del();
+    await age(31);
+    await purgeDeleted();
+
+    const row = (await admin.query(`SELECT * FROM users WHERE id = $1`, [CLIENT_A])).rows[0];
+    expect(row, 'the users row must survive as a tombstone').toBeDefined();
+    expect(row.deleted_at).not.toBeNull();
+  });
+
+  /**
+   * The columns a tombstone is allowed to have.
+   *
+   * This list is the point of the test. Adding a column to `users` fails here
+   * until someone decides whether it belongs on a tombstone — which is the
+   * decision that would otherwise be made silently, by omission, the first
+   * time identity or a consent flag lands on this table.
+   */
+  const TOMBSTONE_COLUMNS = ['created_at', 'deleted_at', 'id', 'role', 'timezone'];
+
+  it('leaves nothing readable on the tombstone', async () => {
+    await seed();
+    await del();
+    await age(31);
+    await purgeDeleted();
+
+    const cols = await admin.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_name = 'users' ORDER BY column_name`,
+    );
+    expect(
+      cols.rows.map((r: { column_name: string }) => r.column_name),
+      'a new column on users needs a decision about the tombstone',
+    ).toEqual(TOMBSTONE_COLUMNS);
+
+    const row = (await admin.query(`SELECT * FROM users WHERE id = $1`, [CLIENT_A])).rows[0]!;
+    // timezone is a coarse location and is the only column here that ever said
+    // anything about the person. It is NOT NULL, so it is neutralised.
+    expect(row.timezone).toBe(SCRUBBED_TIMEZONE);
+    // What is left is the id, the fact of deletion, and the role that makes a
+    // clinician's foreign key to this row still mean something.
+    expect(row.id).toBe(CLIENT_A);
+    expect(row.role).toBe('client');
+  });
+
+  it('keeps a formulation through its client’s purge, pointing at the tombstone', async () => {
+    // The clinician's record of their own reasoning is not the client's to
+    // delete — and formulations cascade from users, so a hard delete would
+    // have taken it silently rather than failing.
     const made = await app.inject({ method: 'POST', url: '/v1/invites', headers: asUser(CLINICIAN, 'clinician'), payload: {} });
     const { token } = made.json() as { token: string };
     await app.inject({ method: 'POST', url: '/v1/invites/redeem', headers: asUser(CLIENT_A), payload: { token } });
+
+    const written = await app.inject({
+      method: 'POST',
+      url: '/v1/formulations',
+      headers: asUser(CLINICIAN, 'clinician'),
+      payload: {
+        clientId: CLIENT_A,
+        note: 'What I saw in the room.',
+        falsify: 'A session where the pattern does not appear at all.',
+        observations: [],
+        gates: { risk: true, dial: true, calibrated: true },
+        floor: 3,
+      },
+    });
+    expect(written.statusCode).toBe(201);
 
     await del(CLIENT_A);
     await age(31);
     await purgeDeleted();
 
-    // The clinician keeps nothing pointing at an account that no longer exists
-    // — including the redeemed invite, which cannot be left with a null
-    // redeemer because its own CHECK forbids it.
-    expect(await count('clinician_client_links')).toBe(0);
-    expect(await count('link_invites')).toBe(0);
-    expect(await count('users', `WHERE id = '${CLINICIAN}'`)).toBe(1);
+    const f = (await admin.query(`SELECT * FROM formulations`)).rows[0];
+    expect(f, 'the formulation must survive').toBeDefined();
+    expect(f.client_id).toBe(CLIENT_A);
+    expect(f.note_enc).not.toBeNull();
+
+    // And the id it points at resolves — to a tombstone.
+    const u = (await admin.query(`SELECT * FROM users WHERE id = $1`, [f.client_id])).rows[0]!;
+    expect(u.deleted_at).not.toBeNull();
+    expect(u.timezone).toBe(SCRUBBED_TIMEZONE);
+
+    // The link survives too, revoked: formulations.link_id is NOT NULL and
+    // cascades from it, so deleting the link would delete the formulation.
+    expect(await count('clinician_client_links', `WHERE status = 'revoked'`)).toBe(1);
   });
 
   it('leaves a live account alone', async () => {
@@ -326,7 +394,7 @@ describe('the purge job', () => {
     await age(31);
 
     await purgeDeleted();
-    expect(await count('users', `WHERE id = '${CLIENT_B}'`)).toBe(1);
+    expect(await count('users', `WHERE id = '${CLIENT_B}' AND timezone <> '${SCRUBBED_TIMEZONE}'`)).toBe(1);
     expect(await count('predictions', `WHERE user_id = '${CLIENT_B}'`)).toBe(1);
     expect(await count('predictions', `WHERE user_id = '${CLIENT_A}'`)).toBe(0);
   });
