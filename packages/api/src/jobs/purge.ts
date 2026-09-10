@@ -88,6 +88,15 @@ export async function purgeDeleted(): Promise<PurgeResult> {
       total += n;
     }
 
+    // An invite has to go rather than be left behind: redeemed_by is
+    // ON DELETE SET NULL, and the redeem-pair CHECK refuses a redeemed invite
+    // with a null redeemer, so the users delete would fail with it still there.
+    const invites = await tx
+      .delete(schema.linkInvites)
+      .where(or(inArray(schema.linkInvites.clinicianId, ids), inArray(schema.linkInvites.redeemedBy, ids)));
+    if ((invites.rowCount ?? 0) > 0) removed['link_invites'] = invites.rowCount ?? 0;
+    total += invites.rowCount ?? 0;
+
     // A link has two parties; either being purged takes the row.
     const links = await tx
       .delete(schema.clinicianClientLinks)

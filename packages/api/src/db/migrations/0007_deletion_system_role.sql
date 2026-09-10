@@ -75,7 +75,8 @@ GRANT EXECUTE ON FUNCTION app_purgeable_user(uuid) TO ledger_api;
 -- ---------------------------------------------------------------------------
 --> statement-breakpoint
 GRANT DELETE ON users, predictions, priors, body_states, reinterpretations,
-  journal_entries, crisis_events, devices, clinician_client_links TO ledger_api;
+  journal_entries, crisis_events, devices, clinician_client_links,
+  link_invites TO ledger_api;
 
 --> statement-breakpoint
 CREATE POLICY predictions_system_purge ON predictions FOR DELETE TO ledger_api
@@ -130,6 +131,18 @@ CREATE POLICY links_system_purge ON clinician_client_links FOR DELETE TO ledger_
 --> statement-breakpoint
 CREATE POLICY links_system_purge_read ON clinician_client_links FOR SELECT TO ledger_api
   USING (app_purgeable_user(client_id) OR app_purgeable_user(clinician_id));
+--> statement-breakpoint
+-- An invite has to be deleted rather than left behind. `redeemed_by` is
+-- ON DELETE SET NULL, and link_invites_redeem_pair requires redeemed_at and
+-- redeemed_by to be null or not-null together — so nulling the redeemer of a
+-- redeemed invite is a check violation, and deleting the user would fail. The
+-- clinician side cascades; this covers both so the order does not matter.
+CREATE POLICY link_invites_system_purge ON link_invites FOR DELETE TO ledger_api
+  USING (app_purgeable_user(clinician_id) OR app_purgeable_user(redeemed_by));
+--> statement-breakpoint
+CREATE POLICY link_invites_system_purge_read ON link_invites FOR SELECT TO ledger_api
+  USING (app_purgeable_user(clinician_id) OR app_purgeable_user(redeemed_by));
+
 --> statement-breakpoint
 -- users last, and its own row rather than a child's.
 CREATE POLICY users_system_purge ON users FOR DELETE TO ledger_api

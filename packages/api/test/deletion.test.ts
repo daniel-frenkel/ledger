@@ -295,6 +295,7 @@ describe('the purge job', () => {
       'prediction_priors',
       'devices',
       'clinician_client_links',
+      'link_invites',
     ]) {
       expect(await count(t), t).toBe(0);
     }
@@ -310,8 +311,11 @@ describe('the purge job', () => {
     await age(31);
     await purgeDeleted();
 
-    // The clinician keeps nothing pointing at an account that no longer exists.
+    // The clinician keeps nothing pointing at an account that no longer exists
+    // — including the redeemed invite, which cannot be left with a null
+    // redeemer because its own CHECK forbids it.
     expect(await count('clinician_client_links')).toBe(0);
+    expect(await count('link_invites')).toBe(0);
     expect(await count('users', `WHERE id = '${CLINICIAN}'`)).toBe(1);
   });
 
