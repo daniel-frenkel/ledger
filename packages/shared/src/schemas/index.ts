@@ -148,6 +148,14 @@ export const predictionSchema = z
     if (p.abandonedAt && !p.abandonReason) {
       ctx.addIssue({ code: 'custom', path: ['abandonReason'], message: 'abandoned predictions need a reason' });
     }
+    // A hit is not discounted and the question is never asked, so a hit that
+    // carries an answer did not come from the resolve screen. This lives here
+    // rather than only on resolvePredictionInput because sync validates with
+    // *this* schema: without it, a row could arrive holding a number nobody
+    // was asked for, and discountRate would quietly ignore it forever.
+    if (p.countsFor != null && p.outcomeVerdict !== 'miss' && p.outcomeVerdict !== 'partial') {
+      ctx.addIssue({ code: 'custom', path: ['countsFor'], message: 'only asked on a miss or a partial' });
+    }
   });
 export type Prediction = z.infer<typeof predictionSchema>;
 

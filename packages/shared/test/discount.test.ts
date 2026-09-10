@@ -12,6 +12,7 @@ import {
   discountRate,
   discountSentence,
   isLoudMiss,
+  predictionSchema,
   shouldRouteToClinician,
   summarizeLedger,
 } from '../src/index.js';
@@ -153,5 +154,109 @@ describe('summarizeLedger', () => {
     });
     expect(out.discount.answered).toBe(2);
     expect(out.discount.rate).toBe(75);
+  });
+});
+
+describe('the schema refuses an answer nobody was asked for', () => {
+  const base = {
+    id: '00000000-0000-4000-8000-000000000001',
+    situation: 'a situation',
+    expectedOutcome: 'an expectation',
+    confidence: 80,
+    priorIds: [],
+    resolvedAt: T,
+    actualOutcome: 'what happened',
+    outcomeSource: 'observed',
+    surpriseRating: 5,
+    presentForIt: true,
+    createdAt: T,
+    clientUpdatedAt: T,
+  };
+
+  it('accepts a discount on a miss and on a partial', () => {
+    expect(predictionSchema.safeParse({ ...base, outcomeVerdict: 'miss', countsFor: 20 }).success).toBe(true);
+    expect(predictionSchema.safeParse({ ...base, outcomeVerdict: 'partial', countsFor: 20 }).success).toBe(true);
+  });
+
+  it('refuses one on a hit — sync validates with this schema, not the resolve input', () => {
+    const out = predictionSchema.safeParse({ ...base, outcomeVerdict: 'hit', countsFor: 100 });
+    expect(out.success).toBe(false);
+    expect(out.success ? '' : out.error.issues[0]!.path.join('.')).toBe('countsFor');
+  });
+
+  it('refuses one on an unclear verdict, and on a prediction that is still open', () => {
+    expect(predictionSchema.safeParse({ ...base, outcomeVerdict: 'unclear', countsFor: 0 }).success).toBe(false);
+    expect(
+      predictionSchema.safeParse({ ...base, resolvedAt: null, outcomeVerdict: null, countsFor: 0 }).success,
+    ).toBe(false);
+  });
+
+  it('accepts a miss with no answer, because skipping is allowed', () => {
+    expect(predictionSchema.safeParse({ ...base, outcomeVerdict: 'miss' }).success).toBe(true);
+    expect(predictionSchema.safeParse({ ...base, outcomeVerdict: 'miss', countsFor: null }).success).toBe(true);
+  });
+
+  it('holds the range as well as the verdict rule', () => {
+    expect(predictionSchema.safeParse({ ...base, outcomeVerdict: 'miss', countsFor: 140 }).success).toBe(false);
+    expect(predictionSchema.safeParse({ ...base, outcomeVerdict: 'miss', countsFor: -1 }).success).toBe(false);
+  });
+});
+
+describe('the proposal’s own fixture', () => {
+  it('three misses at 100/50/0 give a rate of 50 and one dismissed', () => {
+    const d = discountRate([pred({ countsFor: 100 }), pred({ countsFor: 50 }), pred({ countsFor: 0 })]);
+    expect(d.rate).toBe(50);
+    expect(d.dismissed).toBe(1);
+    expect(d.answered).toBe(3);
+  });
+
+  it('null answers are excluded from the mean and from the count', () => {
+    const d = discountRate([
+      pred({ countsFor: 100 }),
+      pred({ countsFor: 50 }),
+      pred({ countsFor: 0 }),
+      pred({ countsFor: null }),
+      pred({ countsFor: null }),
+    ]);
+    expect(d.rate).toBe(50);
+    expect(d.answered).toBe(3);
+    expect(d.askable).toBe(5);
+  });
+});
+
+describe('isLoudMiss is unchanged', () => {
+  /**
+   * Proposal 06 adds a routing case that *reads* isLoudMiss; it does not touch
+   * it. These are the rule's four conditions, pinned so a change to the
+   * discount work cannot quietly widen what counts as loud.
+   */
+  const loud = () =>
+    pred({ confidence: 90, outcomeVerdict: 'miss', outcomeSource: 'observed', presentForIt: true });
+
+  it('is true for a high-confidence, observed, present miss', () => {
+    expect(isLoudMiss(loud())).toBe(true);
+  });
+
+  it('ignores counts_for entirely', () => {
+    for (const countsFor of [0, 50, 100, null]) {
+      expect(isLoudMiss({ ...loud(), countsFor }), String(countsFor)).toBe(true);
+    }
+  });
+
+  it('is false below the confidence threshold, on an inferred outcome, and on a blur', () => {
+    expect(isLoudMiss({ ...loud(), confidence: 20 })).toBe(false);
+    expect(isLoudMiss({ ...loud(), outcomeSource: 'inferred' })).toBe(false);
+    expect(isLoudMiss({ ...loud(), presentForIt: false })).toBe(false);
+  });
+
+  it('is false when the kit was present or the credit went elsewhere', () => {
+    expect(isLoudMiss(loud(), { peakIntensity: 3, ranPastPeak: true, verdictArrived: 'yes', kitUsed: ['breathing_technique'], creditedTo: 'body' })).toBe(false);
+    expect(isLoudMiss(loud(), { peakIntensity: 3, ranPastPeak: true, verdictArrived: 'yes', kitUsed: [], creditedTo: 'technique' })).toBe(false);
+  });
+
+  it('is false for anything that is not a scored miss', () => {
+    expect(isLoudMiss({ ...loud(), outcomeVerdict: 'hit' })).toBe(false);
+    expect(isLoudMiss({ ...loud(), outcomeVerdict: 'unclear' })).toBe(false);
+    expect(isLoudMiss({ ...loud(), resolvedAt: null, outcomeVerdict: null })).toBe(false);
   });
 });

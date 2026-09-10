@@ -48,6 +48,8 @@ Identity (email, display name, phone) is **never** stored in the application dat
 | `clinician_stacks`, `stack_goals` | none — not even their own clinician's | own rows only; not PHI, and deliberately not a directory |
 | `measures` | own rows, full — including ones a clinician administered | rows for a client they hold an active link to; writes only as themselves |
 
+`predictions.counts_for` is a structured number — an integer 0–100 answering "How much does this one count?" — and carries no prose, so it is included in `predictions_summary`, the view a clinician with `share_predictions = false` can read. Same reasoning as confidence and the verdict: a number scoped to a `user_id` is handled as PHI, and it is still not something a person typed.
+
 Two structural guarantees sit under the policies. Child tables (`body_states`, `reinterpretations`, `journal_entries`, `prediction_priors`) reference their parent with a composite foreign key on `(prediction_id, user_id)` / `(prior_id, user_id)`, so a row cannot be attached to another user's prediction or prior even if a policy were wrong. And `users.role` is not updatable by the API role at all (column-level grant covers only `timezone` and `deleted_at`), so a client cannot promote themselves; a link's two parties are fixed at creation by trigger.
 
 Revoking a link sets `status = 'revoked'`; every clinician policy joins through `status = 'active'`, so revocation is immediate and total.

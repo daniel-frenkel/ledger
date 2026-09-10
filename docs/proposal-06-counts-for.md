@@ -25,6 +25,15 @@ In `packages/shared/src/calibration/`:
 
 `predictions` schema, the `predictions_summary` view (rebuilt DROP/CREATE as in 0002; `counts_for` is a structured field and is included in the summary a clinician with `share_predictions = false` can see, because it carries no prose), the shared zod schema and codec (the refine lives on `predictionSchema` so sync rejects a hit carrying `counts_for`), sync (the IndexedDB store version is not bumped: stores hold whole documents with no per-field index, so existing rows simply read the field as absent), the resolve screen in `apps/web`, the research export allowlist (add `counts_for`), and the calibration tests. The Expo client is parked and is not updated.
 
+## Build status (added 2026-09-10)
+
+Two items in "What it touches" are **blocked on prompts that have not run**, not skipped:
+
+- **The clinician view's "Discount rate" and "Dismissed misses" rows.** The clinician ledger screen arrives with Prompt 3; there is no furnace profile block to add rows to yet. The numbers exist in `discountRate()` and on `summarizeLedger().discount`, and there is a TODO pointing here in `packages/shared/src/calibration/`.
+- **The research export allowlist.** That module arrives with Prompt 8 (proposal 03). `counts_for` goes in it when it exists; there is a TODO pointing here in `docs/proposal-03-research-readiness.md`.
+
+One item is **deliberately not done**: the IndexedDB store version is not bumped. The stores hold whole documents with no per-field index, so an added optional field needs no migration, and `upgrade()` in `apps/web/src/db/` calls `createObjectStore` unconditionally — a version bump would throw in every browser that already has the database. Ruled and confirmed 2026-09-10.
+
 ## What it does not do
 
 It does not change `isLoudMiss`, the crisis rules, the mismatch "why" screen, or any clinician-writable column. It is not a symptom measure; the IMS as a full instrument lives in `measures` (proposal 03) and is administered separately.

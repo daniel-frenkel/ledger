@@ -298,6 +298,15 @@ export function summarize(predictions: Prediction[], subject = 'this'): Calibrat
   return { ...base, sentence: sentenceFor(base, subject) };
 }
 
+/**
+ * TODO (Prompt 3, the clinician ledger view): proposal 06 asks for the discount
+ * rate and the dismissed count as two rows in the furnace profile block,
+ * labelled "Discount rate" and "Dismissed misses". The numbers are here —
+ * `discountRate()` above, and `summarizeLedger().discount` — but the block
+ * they belong in is a clinician screen that does not exist yet. The client's
+ * own Ledger shows the one-clause sentence instead, which is a different
+ * decision and stays as it is.
+ */
 export function furnaceProfile(
   predictions: Prediction[],
   reinterpretations: Reinterpretation[],
