@@ -349,6 +349,13 @@ CREATE POLICY exports_system_insert ON exports FOR INSERT TO ledger_api
 -- "consented-only" is enforced by the database rather than by remembering to
 -- write the right WHERE clause. A withdrawn participant becomes invisible to
 -- the export the moment they withdraw, with nothing to re-run.
+-- The participant list itself. 0007 lets the system role see a user row only
+-- when it is about to be purged; the export needs the opposite case — live and
+-- consented — and needs it through the same predicate that scopes the rows, so
+-- the list and the data cannot disagree.
+CREATE POLICY users_research_select ON users FOR SELECT TO ledger_api
+  USING (app_research_consented(id));
+--> statement-breakpoint
 CREATE POLICY predictions_research_select ON predictions FOR SELECT TO ledger_api
   USING (app_research_consented(user_id));
 --> statement-breakpoint
