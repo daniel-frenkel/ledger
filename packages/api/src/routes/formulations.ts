@@ -106,7 +106,7 @@ const formulations: FastifyPluginAsync = async (app) => {
         .from(schema.clinicianModalities)
         .where(eq(schema.clinicianModalities.clinicianId, request.user.id)),
     );
-    // `tier` is text in the column and a union in the type; 0007's CHECK is
+    // `tier` is text in the column and a union in the type; 0005's CHECK is
     // what keeps the two honest. scopeGate, not scopeFor: a clinician with no
     // stack on file is not out of scope, they are unstated, and the row records
     // null rather than a verdict computed from nothing.

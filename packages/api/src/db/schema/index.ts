@@ -497,9 +497,9 @@ export const formulations = pgTable(
     floor: smallint('floor').notNull(),
     protocolSlug: text('protocol_slug'),
     assistantRunId: uuid('assistant_run_id').references(() => assistantRuns.id, { onDelete: 'set null' }),
-    /** The scope gate's verdict, computed at the API from the clinician's own stack. Added in 0007. */
+    /** The scope gate's verdict, computed at the API from the clinician's own stack. Added in 0005. */
     scope: text('scope'),
-    /** Set when the clinician wrote outside their stack knowingly. Added in 0007. */
+    /** Set when the clinician wrote outside their stack knowingly. Added in 0005. */
     scopeAck: boolean('scope_ack').notNull().default(false),
     createdAt: ts('created_at').notNull().defaultNow(),
     deletedAt: ts('deleted_at'),

@@ -51,7 +51,7 @@ const stack: FastifyPluginAsync = async (app) => {
         .where(eq(schema.clinicianModalities.clinicianId, request.user.id)),
     );
 
-    // `tier` is text in the column and a union in the type; 0007's CHECK is
+    // `tier` is text in the column and a union in the type; 0005's CHECK is
     // what keeps the two honest.
     const entries = rows.map((r) => ({ slug: r.modalitySlug, tier: r.tier })) as StackEntry[];
     return {
@@ -78,7 +78,7 @@ const stack: FastifyPluginAsync = async (app) => {
     if (new Set(slugs).size !== slugs.length) {
       return reply.status(422).send({ error: DUPLICATE_MODALITY });
     }
-    // The partial unique indexes in 0007 enforce this too. Checking here first
+    // The partial unique indexes in 0005 enforce this too. Checking here first
     // turns a driver error into a sentence that says which rule was broken.
     for (const capped of CAPPED_TIERS) {
       const n = entries.filter((e) => e.tier === capped).length;
