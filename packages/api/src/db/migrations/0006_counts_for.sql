@@ -9,9 +9,6 @@
 -- the reinterpret move, and the Immunization Scale in `measures` is the same
 -- construct as a validated instrument at intervals. Proposal 03's hypothesis H3
 -- reads them against each other, so they arrive in one migration.
---
--- Numbering: 0005 and 0006 remain unused, held for prompts specified but not
--- built. Drizzle applies in journal order, not filename order.
 
 ALTER TABLE "predictions" ADD COLUMN "counts_for" smallint;
 --> statement-breakpoint

@@ -14,7 +14,6 @@ import {
   COUNTS_FOR,
   INSTRUMENTS,
   INSTRUMENT_SPECS,
-  change,
   instrument,
   isInstrument,
   measureSchema,
@@ -121,18 +120,5 @@ describe('measureSchema', () => {
   it('accepts both ways a measure is administered and nothing else', () => {
     expect(ADMINISTERED_BY).toEqual(['client', 'clinician']);
     expect(measureSchema.safeParse({ ...base, administeredBy: 'assistant' }).success).toBe(false);
-  });
-});
-
-describe('change', () => {
-  it('reports the direction and the interval and no verdict', () => {
-    const c = change(
-      { score: 60, administeredAt: '2026-09-01T00:00:00.000Z' },
-      { score: 45, administeredAt: '2026-10-01T00:00:00.000Z' },
-    );
-    expect(c).toEqual({ from: 60, to: 45, delta: -15, days: 30 });
-    // No "improved", no "better": on the IMS a fall is a fall, and what it
-    // means is the clinician's to say.
-    expect(Object.keys(c).sort()).toEqual(['days', 'delta', 'from', 'to']);
   });
 });

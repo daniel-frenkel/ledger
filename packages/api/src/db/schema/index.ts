@@ -176,7 +176,7 @@ export const predictions = pgTable(
     /**
      * "How much does this one count?" — 0 to 100, asked only on a miss or a
      * partial. Nullable and skippable: unanswered is null, never 100. Added
-     * in 0008.
+     * in 0006.
      */
     countsFor: smallint('counts_for'),
     /** "Did you?" — the exit actually taken. */

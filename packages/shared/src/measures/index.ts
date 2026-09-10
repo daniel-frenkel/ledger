@@ -127,30 +127,3 @@ export const measureSchema = z
   });
 
 export type Measure = z.infer<typeof measureSchema>;
-
-/**
- * Two IMS administrations, as a direction of travel.
- *
- * Deliberately not a verdict: it returns the change and the days between, and
- * says nothing about whether the change is good, clinically meaningful, or
- * caused by anything. Interpretation is the clinician's.
- */
-export interface MeasureChange {
-  from: number;
-  to: number;
-  delta: number;
-  days: number;
-}
-
-export function change(
-  earlier: { score: number; administeredAt: string },
-  later: { score: number; administeredAt: string },
-): MeasureChange {
-  const ms = Date.parse(later.administeredAt) - Date.parse(earlier.administeredAt);
-  return {
-    from: earlier.score,
-    to: later.score,
-    delta: later.score - earlier.score,
-    days: Math.round(ms / 86_400_000),
-  };
-}
