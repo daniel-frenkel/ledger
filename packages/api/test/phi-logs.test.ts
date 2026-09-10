@@ -3,10 +3,27 @@
  * seeded strings, then grep everything the logger wrote. The build fails if
  * any of them appears — including the user id.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+
+const { locateMock } = vi.hoisted(() => ({ locateMock: vi.fn() }));
+
+vi.hoisted(() => {
+  // The assistant ships off. It is switched on here because a route that
+  // returns 503 proves nothing about whether a note would have been logged.
+  process.env['ASSISTANT_ENABLED'] = 'true';
+  process.env['ANTHROPIC_API_KEY'] ??= 'test-key-not-a-real-one';
+});
+
+// The model is mocked; what is under test is our side of the call.
+vi.mock('../src/services/ai.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/services/ai.js')>();
+  return { ...actual, locate: locateMock };
+});
+
+// Static imports are safe: vitest hoists vi.mock and vi.hoisted above them.
 import { closeDb } from '../src/db/client.js';
-import { CLIENT_A, DEVICE_A, LogSink, asUser, buildApp, truncateAll, uid } from './helpers.js';
+import { CLIENT_A, CLINICIAN, DEVICE_A, LogSink, asUser, buildApp, truncateAll, uid } from './helpers.js';
 
 const SEEDS = {
   situation: 'ZQX-SITUATION-8841 telling the sergeant I froze',
@@ -97,5 +114,71 @@ describe('PHI never reaches the log', () => {
     expect(logs, 'user id leaked').not.toContain(CLIENT_A);
     expect(logs, 'x-test-user header leaked').not.toContain('x-test-user');
     expect(logs, 'authorization header leaked').not.toMatch(/authorization/i);
+  });
+
+  /**
+   * The assistant is the first hop where a third party reads client prose, so
+   * the note gets the same treatment as everything above and one check more:
+   * the spans the model quotes back are also the client's words, and they are
+   * returned to the clinician who wrote them without being written down.
+   */
+  it('a locating run leaks no part of the note, on the happy path or either failure', async () => {
+    const NOTE_SEEDS = {
+      observed: 'ZQX-NOTE-9301 she recited the formulation back and nothing moved',
+      reaction: 'ZQX-NOTE-9302 flinched before I finished the sentence',
+      quoted: 'ZQX-NOTE-9303 he will decide I am the difficult one',
+    };
+    const note = Object.values(NOTE_SEEDS).join('. ');
+
+    locateMock.mockResolvedValue({
+      // The evidence spans are the client's words coming back out.
+      observations: [
+        { id: 'insight-does-not-move', evidence: [NOTE_SEEDS.observed] },
+        { id: 'reaction-before-thought', evidence: [NOTE_SEEDS.reaction] },
+      ],
+      gateQuestions: ['risk'],
+      selfReportOnly: false,
+      model: 'claude-test-model',
+      latencyMs: 7,
+    });
+
+    // A link, made the way a real one is.
+    const made = await app.inject({
+      method: 'POST',
+      url: '/v1/invites',
+      headers: asUser(CLINICIAN, 'clinician'),
+      payload: {},
+    });
+    const { token } = made.json() as { token: string };
+    await app.inject({ method: 'POST', url: '/v1/invites/redeem', headers: asUser(CLIENT_A), payload: { token } });
+
+    const locateCall = (body: Record<string, unknown>) =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/assistant/locate',
+        headers: asUser(CLINICIAN, 'clinician'),
+        payload: body,
+      });
+
+    const ok = await locateCall({ clientId: CLIENT_A, note });
+    expect(ok.statusCode).toBe(200);
+    // The clinician does get the spans back — that is the feature.
+    expect(ok.body).toContain('ZQX-NOTE-9301');
+
+    // Both failure paths, because an error is the usual way text escapes.
+    locateMock.mockRejectedValue(new Error(`upstream rejected: ${note}`));
+    expect((await locateCall({ clientId: CLIENT_A, note })).statusCode).toBe(502);
+
+    locateMock.mockRejectedValue(Object.assign(new Error('bad shape'), { name: 'LocateSchemaError', reason: note }));
+    expect((await locateCall({ clientId: CLIENT_A, note })).statusCode).toBe(502);
+
+    const logs = sink.text();
+    for (const [name, s] of Object.entries(NOTE_SEEDS)) {
+      expect(logs, `note seed "${name}" leaked`).not.toContain(s);
+    }
+    expect(logs, 'a note token leaked').not.toMatch(/ZQX-NOTE-/);
+    expect(logs, 'clinician id leaked').not.toContain(CLINICIAN);
+    // The row that records the run is checked in test/assistant.test.ts, which
+    // reads it back column by column.
   });
 });

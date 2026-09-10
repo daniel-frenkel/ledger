@@ -14,6 +14,7 @@
     "test:rls": "vitest run test/rls.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
+    "eval:locate": "tsx scripts/eval-locate.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

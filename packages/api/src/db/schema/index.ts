@@ -445,6 +445,8 @@ export const assistantRuns = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     noteSha256: bytea('note_sha256').notNull(),
     observationIds: jsonb('observation_ids').notNull().default(sql`'[]'::jsonb`),
+    /** Gate keys the run asked about: 'risk' | 'dial' | 'calibrated'. Added in 0004. */
+    gateQuestionIds: jsonb('gate_question_ids').notNull().default(sql`'[]'::jsonb`),
     model: text('model').notNull(),
     latencyMs: integer('latency_ms').notNull(),
     createdAt: ts('created_at').notNull().defaultNow(),
@@ -453,6 +455,7 @@ export const assistantRuns = pgTable(
     check('assistant_runs_note_sha256_len', sql`octet_length(${t.noteSha256}) = 32`),
     check('assistant_runs_not_self', sql`${t.clinicianId} <> ${t.clientId}`),
     check('assistant_runs_observation_ids_array', sql`jsonb_typeof(${t.observationIds}) = 'array'`),
+    check('assistant_runs_gate_question_ids_array', sql`jsonb_typeof(${t.gateQuestionIds}) = 'array'`),
   ],
 );
 

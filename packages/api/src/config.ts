@@ -35,6 +35,13 @@ const schema = z
     ANTHROPIC_API_KEY: z.string().optional(),
     ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-5'),
 
+    /**
+     * The locating assistant. Ships off, and stays off until a BAA covering
+     * the note is signed — it is the first hop where a third party reads
+     * client prose. See docs/data-path.md hop 8.
+     */
+    ASSISTANT_ENABLED: bool.default('false'),
+
     SENTRY_DSN: z.string().url().optional().or(z.literal('')),
     EXPO_ACCESS_TOKEN: z.string().optional(),
     CRON_NUDGE_TICK: z.string().default('*/15 * * * *'),
@@ -49,6 +56,16 @@ const schema = z
     }
     if (c.AUTH_TEST_MODE && c.NODE_ENV === 'production') {
       ctx.addIssue({ code: 'custom', message: 'AUTH_TEST_MODE cannot be enabled in production' });
+    }
+    // Fail at boot, not on the first request. A server that answers /v1/
+    // assistant/locate with a 500 because a key is missing has already told a
+    // clinician the feature exists.
+    if (c.ASSISTANT_ENABLED && !c.ANTHROPIC_API_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['ANTHROPIC_API_KEY'],
+        message: 'required when ASSISTANT_ENABLED is set',
+      });
     }
     const key = Buffer.from(c.FIELD_ENCRYPTION_KEY, 'base64');
     if (key.length !== 32) {
