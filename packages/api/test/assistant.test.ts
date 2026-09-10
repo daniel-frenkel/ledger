@@ -30,6 +30,7 @@ vi.mock('../src/services/ai.js', async (importOriginal) => {
 import { closeDb } from '../src/db/client.js';
 import { LocateSchemaError } from '../src/services/ai.js';
 import { noteHash } from '../src/routes/assistant.js';
+import { observation } from '@ledger/shared';
 import { ADMIN_URL, CLIENT_A, CLIENT_B, CLINICIAN, LogSink, asUser, buildApp, truncateAll } from './helpers.js';
 
 /** The columns proposal 02 §3 allows, plus the gate keys migration 0004 adds. */
@@ -174,7 +175,10 @@ describe('POST /v1/assistant/locate', () => {
     };
 
     expect(body.observations[0]!.evidence).toEqual([RECITE]);
-    expect(body.observations[0]!.q).toMatch(/insight/i);
+    // The wording is whatever @ledger/shared says it is. Asserting it against
+    // the module rather than against a word is the whole point: the model does
+    // not supply this string and cannot change it.
+    expect(body.observations[0]!.q).toBe(observation('insight-does-not-move')!.q);
     expect(body.gateQuestions.map((g) => g.id)).toEqual(['risk', 'calibrated']);
     expect(body.gateQuestions[0]!.question).toMatch(/acute risk/i);
   });
