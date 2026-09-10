@@ -19,9 +19,9 @@
 
 | # | Control | Build |
 |---|---|---|
-| B1 | **Audit log of access to client data.** RLS enforces who *can* read; nothing records who *did*. `access_log (id, actor_id, actor_role, client_id, table, action, row_count, at)` written inside `withUser` for every clinician read of client rows and every export. Append-only, system-read-only, retained six years. Never stores content. | migration 0006 |
+| B1 | **Audit log of access to client data.** RLS enforces who *can* read; nothing records who *did*. `access_log (id, actor_id, actor_role, client_id, table, action, row_count, at)` written inside `withUser` for every clinician read of client rows and every export. Append-only, system-read-only, retained six years. Never stores content. | migration 0009 |
 | B2 | **MFA for clinicians.** Email OTP is one factor. Supabase Auth supports TOTP; require enrollment before the first invite is created. Clients stay on email OTP. | clinician app + API check |
-| B3 | **Account deletion, end to end.** Prompt 4 as written — soft-delete, revoke links, delete the auth user, 30-day hard delete. Required before any client exists. | Prompt 4, now |
+| B3 | **Account deletion, end to end.** Prompt 4 as written — soft-delete, revoke links, delete the auth user, 30-day hard delete. Required before any client exists. | **done** — migration 0007, PR for Prompt 4 |
 | B4 | **Session and token hygiene.** Clinician sessions expire at 12 hours idle; client sessions at 30 days; refresh-token rotation on. Documented in data-path. | config |
 | B5 | **Key management.** `FIELD_ENCRYPTION_KEY` moves from a `.env` file to the host's secret manager (Google Secret Manager under A3); rotation procedure written down and tested once with `key_version`. | Prompt 2 |
 | B6 | **Backups and restore.** Supabase's under A2; one restore rehearsal into a scratch project, documented with the date. | procedure |
@@ -43,6 +43,6 @@ The beta plan is free until pricing is announced, with 60 days' notice and found
 
 ## Order
 
-A7 → A1 template → A2 and A3 together (Prompt 11 moves auth and the database; Prompt 2 deploys) → A4 → B3 (Prompt 4) → B1, B2 (migration 0006) → B5, B9 with the deploy → B4, B6, B7, B8, C1, C2 → the first clinician signs A1 → the first invite.
+A7 → A1 template → A2 and A3 together (Prompt 11 moves auth and the database; Prompt 2 deploys) → A4 → B3 (Prompt 4, done) → B1, B2 (migration 0009) → B5, B9 with the deploy → B4, B6, B7, B8, C1, C2 → the first clinician signs A1 → the first invite.
 
 Everything in proposals 02–04 continues in parallel; none of it is gated on this list except turning the assistant on, which is gated on A5.

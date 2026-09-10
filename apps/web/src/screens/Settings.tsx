@@ -3,11 +3,31 @@ import { FRAMING, CRISIS_RESOURCES } from '@ledger/shared';
 import { useSession } from '@/auth/session';
 import { persistenceState } from '@/storage';
 import { syncNow } from '@/sync';
-import { Button, Card, Divider, H1, H2, P, Screen, Small } from '@/ui';
+import { DELETE_CONFIRMATION, confirms, deleteAccount } from '@/account';
+import { Button, Card, Divider, Field, H1, H2, P, Screen, Small } from '@/ui';
 
 export default function Settings() {
   const { signOut, session } = useSession();
   const [persisted, setPersisted] = useState<string | null>(null);
+
+  const [armed, setArmed] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const remove = async () => {
+    setDeleting(true);
+    setProblem(null);
+    try {
+      await deleteAccount();
+      // signOut wipes IndexedDB. The local copy has always left with the
+      // account; this is the same path, reached deliberately.
+      await signOut();
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : 'Something went wrong. Nothing has been deleted.');
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     void persistenceState().then(setPersisted);
@@ -62,6 +82,48 @@ export default function Settings() {
       <Button title="Sync now" kind="secondary" onPress={() => void syncNow()} />
       <Small>Signed in as an anonymous id{session?.user.email ? ` (${session.user.email})` : ''}.</Small>
       <Button title="Sign out and clear this browser" kind="danger" onPress={() => void signOut()} />
+
+      <Divider />
+      <Card>
+        <H2>Delete my account</H2>
+        <P muted>
+          Everything you have written goes: the forecasts, what happened, the rules you were testing, the notes. Any
+          clinician connected to you loses access straight away.
+        </P>
+        <Small>
+          Your entries are held for 30 days before they are destroyed, in case this was a mistake and you want them
+          back. After that they cannot be recovered by anyone, including us. Your sign-in is deleted immediately.
+        </Small>
+
+        {!armed ? (
+          <Button title="Delete my account" kind="danger" onPress={() => setArmed(true)} />
+        ) : (
+          <>
+            <Field
+              label={`Type ${DELETE_CONFIRMATION} to confirm`}
+              value={typed}
+              onChangeText={setTyped}
+              placeholder={DELETE_CONFIRMATION}
+            />
+            {problem ? <P>{problem}</P> : null}
+            <Button
+              title={deleting ? 'Deleting…' : 'Delete everything'}
+              kind="danger"
+              disabled={!confirms(typed) || deleting}
+              onPress={() => void remove()}
+            />
+            <Button
+              title="Keep my account"
+              kind="secondary"
+              onPress={() => {
+                setArmed(false);
+                setTyped('');
+                setProblem(null);
+              }}
+            />
+          </>
+        )}
+      </Card>
     </Screen>
   );
 }

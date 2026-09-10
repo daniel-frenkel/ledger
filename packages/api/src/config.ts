@@ -28,6 +28,22 @@ const schema = z
     SUPABASE_JWKS_URL: z.string().url().optional(),
     SUPABASE_JWT_SECRET: z.string().min(16).optional(),
 
+    /**
+     * Which identity provider owns the auth user. One member today; Prompt 11
+     * adds 'identity-platform' with the move off Supabase (go-live gate A2).
+     */
+    AUTH_PROVIDER: z.enum(['supabase']).default('supabase'),
+    /**
+     * The only credential in this environment that can act on another user,
+     * and the only runtime use of a service-role key. Read in exactly one
+     * place, src/auth-admin.ts, for exactly one call: deleting the auth user
+     * when an account is deleted. It never touches the application database.
+     */
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(20).optional(),
+    /** How long a soft-deleted row waits before the purge job removes it. */
+    DELETION_GRACE_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+    CRON_PURGE_TICK: z.string().default('30 3 * * *'),
+
     FIELD_ENCRYPTION_KEY: z.string().min(1),
     FIELD_ENCRYPTION_KEY_VERSION: z.coerce.number().int().positive().default(1),
     /** Older keys for rotation: FIELD_ENCRYPTION_KEY_V1, _V2 … read dynamically. */
@@ -65,6 +81,17 @@ const schema = z
         code: 'custom',
         path: ['ANTHROPIC_API_KEY'],
         message: 'required when ASSISTANT_ENABLED is set',
+      });
+    }
+    // Deleting an account needs the provider credential. In production a
+    // deployment without it is a deployment that cannot honour a deletion
+    // request, so it does not come up; elsewhere the route refuses instead,
+    // which keeps dev and CI runnable without a service-role key on disk.
+    if (c.NODE_ENV === 'production' && c.AUTH_PROVIDER === 'supabase' && !c.SUPABASE_SERVICE_ROLE_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SUPABASE_SERVICE_ROLE_KEY'],
+        message: 'required in production: account deletion cannot be honoured without it',
       });
     }
     const key = Buffer.from(c.FIELD_ENCRYPTION_KEY, 'base64');

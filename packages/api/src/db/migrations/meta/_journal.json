@@ -50,6 +50,13 @@
       "when": 1788797834550,
       "tag": "0006_counts_for",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788797834551,
+      "tag": "0007_deletion_system_role",
+      "breakpoints": true
     }
   ]
 }

@@ -925,4 +925,88 @@ describe('0003 invites and formulations', () => {
       await expect(c.query(`UPDATE measures SET score = 1`)).rejects.toThrow();
     });
   });
+
+  // --- deletion -----------------------------------------------------------
+
+  it('#44 a client cannot hard-delete their own live rows', async () => {
+    // 0007 grants DELETE for the first time. The guarantee that a client
+    // cannot destroy their own ledger now rests on a policy rather than on the
+    // absence of the verb, so it gets a test.
+    await as(CLIENT_A, 'client', async (c) => {
+      for (const t of ['predictions', 'priors', 'body_states', 'reinterpretations', 'journal_entries']) {
+        const r = await c.query(`DELETE FROM ${t}`);
+        expect(r.rowCount, t).toBe(0);
+      }
+      expect((await c.query(`DELETE FROM users WHERE id = $1`, [CLIENT_A])).rowCount).toBe(0);
+    });
+    // Everything is still there.
+    await as(CLIENT_A, 'client', async (c) => {
+      expect(await count(c, 'SELECT count(*) n FROM predictions')).toBe(1);
+      expect(await count(c, 'SELECT count(*) n FROM journal_entries')).toBe(2);
+    });
+  });
+
+  it('#45 a client cannot hard-delete their own soft-deleted rows either', async () => {
+    await admin.query(`UPDATE predictions SET deleted_at = now() - interval '90 days'`);
+    // Past the grace period, but the client is not the system role.
+    await as(CLIENT_A, 'client', async (c) => {
+      expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(0);
+    });
+    expect(Number((await admin.query(`SELECT count(*) n FROM predictions`)).rows[0]!.n)).toBe(1);
+  });
+
+  it('#46 a clinician cannot hard-delete a linked client’s rows', async () => {
+    await linkActive({ predictions: true });
+    await admin.query(`UPDATE predictions SET deleted_at = now() - interval '90 days'`);
+    await as(CLINICIAN, 'clinician', async (c) => {
+      expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(0);
+    });
+  });
+
+  it('#47 the system role deletes only soft-deleted rows past the grace period', async () => {
+    const asSystem = async <T,>(fn: (c: pg.Client) => Promise<T>): Promise<T> => {
+      await api.query('BEGIN');
+      try {
+        await api.query(
+          `SELECT set_config('request.role', 'system', true),
+                  set_config('request.user_id', '', true),
+                  set_config('app.deletion_grace_days', '30', true)`,
+        );
+        return await fn(api);
+      } finally {
+        await api.query('ROLLBACK');
+      }
+    };
+
+    // Live: refused even as system.
+    await asSystem(async (c) => {
+      expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(0);
+    });
+
+    // Soft-deleted but inside the window: still refused.
+    await admin.query(`UPDATE predictions SET deleted_at = now() - interval '10 days'`);
+    await asSystem(async (c) => {
+      expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(0);
+    });
+
+    // Past the window: allowed.
+    await admin.query(`UPDATE predictions SET deleted_at = now() - interval '31 days'`);
+    await asSystem(async (c) => {
+      expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(1);
+    });
+  });
+
+  it('#48 the system role can read nothing, because it is nobody', async () => {
+    // Every SELECT policy keys on app_user_id(), and there is no user id set.
+    // A bug in the purge job cannot turn into a cross-user read.
+    await api.query('BEGIN');
+    try {
+      await api.query(`SELECT set_config('request.role', 'system', true), set_config('request.user_id', '', true)`);
+      for (const t of ['predictions', 'priors', 'journal_entries', 'body_states', 'reinterpretations']) {
+        expect(await count(api, `SELECT count(*) n FROM ${t}`), t).toBe(0);
+      }
+    } finally {
+      await api.query('ROLLBACK');
+    }
+  });
 });
