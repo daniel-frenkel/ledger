@@ -270,11 +270,21 @@ describe('the scope gate on POST /v1/formulations', () => {
     expect((await admin.query(`SELECT scope FROM formulations`)).rows[0]!.scope).toBe('uncovered');
   });
 
-  it('treats an empty stack as covering nothing', async () => {
+  it('does not apply to a clinician with no stack on file', async () => {
     await link();
+    // You cannot be out of scope relative to a stack you have not written
+    // down, and nobody should have to tick "I know" on every formulation to
+    // say they have not filled one in yet.
     const res = await formulate(3);
-    expect(res.statusCode).toBe(422);
-    expect(res.json()).toMatchObject({ scope: 'uncovered' });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ scope: null });
+    expect((await admin.query(`SELECT scope, scope_ack FROM formulations`)).rows[0]!.scope).toBeNull();
+  });
+
+  it('starts applying as soon as the stack has one row', async () => {
+    await link();
+    await putStack([{ slug: 'cbt', tier: 'fluent' }]);
+    expect((await formulate(7)).statusCode).toBe(422);
   });
 
   it('reads the verdict back on the formulation list', async () => {

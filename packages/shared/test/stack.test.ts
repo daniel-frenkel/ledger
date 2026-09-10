@@ -19,6 +19,7 @@ import {
   isModalitySlug,
   modality,
   scopeFor,
+  scopeGate,
   scopeNeedsAck,
   stackWarnings,
   tierRank,
@@ -161,6 +162,22 @@ describe('the scope gate', () => {
     expect(scopeNeedsAck('covered')).toBe(false);
     expect(scopeNeedsAck('stretch')).toBe(true);
     expect(scopeNeedsAck('uncovered')).toBe(true);
+  });
+
+  /**
+   * The arithmetic and the gate are different questions. scopeFor says what a
+   * stack covers; scopeGate says whether the gate applies at all.
+   */
+  it('does not apply to a clinician with no stack on file', () => {
+    expect(scopeGate([], 3)).toBeNull();
+    expect(scopeNeedsAck(scopeGate([], 3))).toBe(false);
+    // The arithmetic still says what it says.
+    expect(scopeFor([], 3)).toBe('uncovered');
+  });
+
+  it('applies as soon as there is one row', () => {
+    expect(scopeGate([{ slug: 'cbt', tier: 'fluent' }], 3)).toBe('covered');
+    expect(scopeGate([{ slug: 'cbt', tier: 'fluent' }], 7)).toBe('uncovered');
   });
 });
 

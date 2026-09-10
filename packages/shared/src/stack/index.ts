@@ -241,7 +241,23 @@ export function scopeFor(stack: readonly StackEntry[], floor: number | null): Sc
 }
 
 /** Whether a formulation on this floor may be written without an acknowledgement. */
-export const scopeNeedsAck = (verdict: ScopeVerdict): boolean => verdict !== 'covered';
+export const scopeNeedsAck = (verdict: ScopeVerdict | null): boolean => verdict !== null && verdict !== 'covered';
+
+/**
+ * The gate as it actually applies, which is not the same as the arithmetic.
+ *
+ * An empty stack returns null: the gate does not apply, and the formulation is
+ * written with no verdict recorded. You cannot be out of scope relative to a
+ * stack you have not written down, and a clinician who has not filled one in
+ * should not have to tick "I know" on every formulation to say so. Null on the
+ * row means "no stack on file", which is why `formulations.scope` is nullable.
+ *
+ * Use this at the boundary. Use scopeFor() when you want the arithmetic.
+ */
+export function scopeGate(stack: readonly StackEntry[], floor: number | null): ScopeVerdict | null {
+  if (stack.length === 0) return null;
+  return scopeFor(stack, floor);
+}
 
 /**
  * Reading-rule violations in a stack. Advisory: the document's rules are about

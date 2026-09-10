@@ -24,7 +24,7 @@ import {
   GATE_KEYS,
   allGatesCleared,
   gatesSchema,
-  scopeFor,
+  scopeGate,
   scopeNeedsAck,
   uuid,
   unknownObservationIds,
@@ -107,8 +107,10 @@ const formulations: FastifyPluginAsync = async (app) => {
         .where(eq(schema.clinicianModalities.clinicianId, request.user.id)),
     );
     // `tier` is text in the column and a union in the type; 0007's CHECK is
-    // what keeps the two honest.
-    const scope = scopeFor(stack as StackEntry[], b.floor);
+    // what keeps the two honest. scopeGate, not scopeFor: a clinician with no
+    // stack on file is not out of scope, they are unstated, and the row records
+    // null rather than a verdict computed from nothing.
+    const scope = scopeGate(stack as StackEntry[], b.floor);
     if (scopeNeedsAck(scope) && !b.scopeAck) {
       return reply.status(422).send({ error: SCOPE_NOT_ACKNOWLEDGED, scope, floor: b.floor });
     }

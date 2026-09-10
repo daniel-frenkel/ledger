@@ -23,7 +23,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { scopeFor, scopeNeedsAck, type StackEntry } from '@ledger/shared';
+import { scopeGate, scopeNeedsAck, type StackEntry } from '@ledger/shared';
 import { FLOOR_CONTENT, floor } from '@/content/floors';
 import { protoTitlesForFloor, protocolByTitle } from '@/content/protocols';
 import {
@@ -138,7 +138,7 @@ export default function FormulatePage() {
   };
 
   const nextVersion = priorVersions + 1;
-  const scope = shown && stack ? scopeFor(stack, shown) : null;
+  const scope = shown && stack ? scopeGate(stack, shown) : null;
   const needsAck = scope !== null && scopeNeedsAck(scope);
   const canWrite =
     !!clientId &&
