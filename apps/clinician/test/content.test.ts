@@ -27,7 +27,7 @@ import {
 import { CANON, CORE_SIX, FLOOR_TOKENS, floorsIn, modalitiesForFloor } from '../content/modalities';
 import { ALL_SECTIONS, MODALITY_SECTIONS } from '../content/modality-sections';
 import { MODEL_BLOCKS } from '../content/model';
-import { inviteUrl } from '../lib/api';
+import { inviteUrl } from '../lib/invite-url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..', '..');

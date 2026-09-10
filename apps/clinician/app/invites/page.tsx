@@ -15,7 +15,8 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ApiError, WEB_URL, api, inviteUrl, useClinicianSession } from '@/lib/api';
+import { ApiError, WEB_URL, api, useClinicianSession } from '@/lib/api';
+import { inviteUrl } from '@/lib/invite-url';
 import { SignIn } from '@/app/sign-in';
 
 interface Invite {

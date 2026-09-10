@@ -72,17 +72,6 @@ export async function verifyOtp(email: string, token: string): Promise<Session> 
   return data.session;
 }
 
-/**
- * The URL a client opens to accept an invitation.
- *
- * The token goes in the fragment. Browsers do not send a fragment to a server,
- * so it stays out of access logs, referrer headers and proxies on the way —
- * which is the whole reason the invite is shaped this way, and the reason the
- * link has to be sent whole rather than rebuilt from its parts.
- */
-export const inviteUrl = (webUrl: string, token: string): string =>
-  `${webUrl.replace(/\/+$/, '')}/join#${token}`;
-
 export class ApiError extends Error {
   constructor(
     readonly status: number,
