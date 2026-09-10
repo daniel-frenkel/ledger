@@ -174,14 +174,18 @@ export function keepOnlyGrounded(out: LocateOutput, note: string): LocateOutput 
  * logged, not returned, not stored, and not attached to an error. The only
  * trace a run leaves is the row routes/assistant.ts writes, which holds the
  * note's SHA-256 and no part of the note.
+ *
+ * `stack` is the clinician's own training stack — modality and tier, theirs,
+ * not client data. It constrains what the model is told it may suggest and
+ * changes nothing about what it may return.
  */
-export async function locate(note: string): Promise<LocateResult> {
+export async function locate(note: string, stack: readonly { slug: string; tier: string }[] = []): Promise<LocateResult> {
   const c = config();
   const started = Date.now();
   const res = await anthropic().messages.create({
     model: c.ANTHROPIC_MODEL,
     max_tokens: 2000,
-    system: systemPrompt(),
+    system: systemPrompt(stack),
     tools: [LOCATE_TOOL],
     tool_choice: { type: 'tool', name: LOCATE_TOOL.name },
     messages: [{ role: 'user', content: note }],

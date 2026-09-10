@@ -225,3 +225,55 @@ describe('the system prompt', () => {
     expect(systemPrompt()).toMatch(/not a therapist/i);
   });
 });
+
+/**
+ * The training stack in the system prompt.
+ *
+ * A clinician's own training is not client data, and it goes in so the model
+ * is not silently reasoning as though every tool were available. What it must
+ * never do is widen what the model may return.
+ */
+describe('the stack block', () => {
+  const STACK = [
+    { slug: 'cbt', tier: 'fluent' },
+    { slug: 'emdr', tier: 'literacy' },
+  ];
+
+  it('carries the rule whether or not a stack is given', () => {
+    for (const p of [systemPrompt(), systemPrompt(STACK)]) {
+      expect(p).toMatch(/Never suggest a modality their stack lacks/i);
+      expect(p).toMatch(/referral, co-treatment or supervision/i);
+    }
+  });
+
+  it('adds no block at all when the stack is empty', () => {
+    // The rule sentence names the stack either way; the heading is what only
+    // appears when there is something under it.
+    expect(systemPrompt()).not.toContain("## The clinician's training stack");
+    expect(systemPrompt(STACK)).toContain("## The clinician's training stack");
+  });
+
+  it('lists modality and tier, and nothing else', () => {
+    const p = systemPrompt(STACK);
+    expect(p).toContain("## The clinician's training stack");
+    expect(p).toContain('- cbt: fluent');
+    expect(p).toContain('- emdr: literacy');
+  });
+
+  it('does not widen the output: the schema is the same three fields either way', async () => {
+    create.mockResolvedValue(toolCall(wellFormed));
+    await locate(NOTE, STACK);
+    const schema = (create.mock.calls[0]![0] as { tools: { input_schema: Record<string, any> }[] }).tools[0]!
+      .input_schema;
+    expect(Object.keys(schema['properties']).sort()).toEqual(['gateQuestions', 'observations', 'selfReportOnly']);
+    expect(schema['additionalProperties']).toBe(false);
+  });
+
+  it('puts the stack in the system prompt, never in the note', async () => {
+    create.mockResolvedValue(toolCall(wellFormed));
+    await locate(NOTE, STACK);
+    const args = create.mock.calls[0]![0] as { system: string; messages: { content: string }[] };
+    expect(args.system).toContain('- cbt: fluent');
+    expect(args.messages[0]!.content).toBe(NOTE);
+  });
+});

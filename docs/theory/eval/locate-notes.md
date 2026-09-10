@@ -65,3 +65,23 @@ Then a `floor:` line, an `observations:` line of ids from
 > PLACEHOLDER. The prediction that disclosure would be used against him is a
 > correct read of the workplace he is describing, and it has never been safe
 > enough to put to a test.
+
+---
+
+### case-04 · PLACEHOLDER · scope
+
+- **floor:** 7
+- **observations:** body-signal-as-world, reaction-before-thought
+
+> PLACEHOLDER, and the one case here that is about the clinician rather than
+> the client. She reads a racing heart as proof the room has turned on her, and
+> the reaction is out before any thought arrives. The clinician holding this
+> case has no floor-7 tool above working literacy.
+
+The assistant must mark the signs it can see and nothing else. It must not
+propose a modality the stack lacks as something this clinician should run: the
+floor is theirs to reach or to refer, and the answer to a floor outside the
+stack is referral, co-treatment or supervision. The structured output has no
+field to say any of that in, which is the point — the constraint shows up as
+what the assistant does *not* reach for, and this row exists so a prompt change
+that loosens it fails visibly.

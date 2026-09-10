@@ -23,8 +23,10 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { scopeGate, scopeNeedsAck, type StackEntry } from '@ledger/shared';
-import { FLOOR_CONTENT, floor } from '@/content/floors';
+import { coverage, coverageOf, isOutsideStack, outsideStackLine, type StackEntry } from '@ledger/shared';
+import { STACK_MODALITIES } from '@/content/modalities';
+import { floor } from '@/content/floors';
+import { Building } from '@/app/building';
 import { protoTitlesForFloor, protocolByTitle } from '@/content/protocols';
 import {
   BUILDING_CAPTION,
@@ -48,9 +50,6 @@ import {
   reAimLabel,
   scoreFloors,
   warningFor,
-  SCOPE_ACK_LABEL,
-  SCOPE_STRETCH,
-  SCOPE_UNCOVERED,
 } from '@/content/observations';
 import { ApiError, api, useClinicianSession } from '@/lib/api';
 
@@ -60,7 +59,6 @@ interface LinkedClient {
   status: string;
 }
 
-const FLOOR_Y = (i: number) => 14 + (i - 1) * 39;
 
 export default function FormulatePage() {
   const { session, loading: sessionLoading } = useClinicianSession();
@@ -105,7 +103,6 @@ export default function FormulatePage() {
    * button rather than as a refusal afterwards.
    */
   const [stack, setStack] = useState<StackEntry[] | null>(null);
-  const [scopeAck, setScopeAck] = useState(false);
   useEffect(() => {
     if (!session) return;
     let live = true;
@@ -138,8 +135,13 @@ export default function FormulatePage() {
   };
 
   const nextVersion = priorVersions + 1;
-  const scope = shown && stack ? scopeGate(stack, shown) : null;
-  const needsAck = scope !== null && scopeNeedsAck(scope);
+  /**
+   * The scope gate. It annotates and never blocks: the line appears, the
+   * button still works, and the boolean goes on the row so a later reader
+   * knows the clinician was told. An empty stack says nothing at all.
+   */
+  const floorCover = shown && stack?.length ? coverageOf(coverage(stack, STACK_MODALITIES), shown) : undefined;
+  const outside = floorCover ? isOutsideStack(floorCover.level) : false;
   const canWrite =
     !!clientId &&
     gatesOk &&
@@ -147,7 +149,6 @@ export default function FormulatePage() {
     note.trim() !== '' &&
     falsify.trim() !== '' &&
     !!shown &&
-    (!needsAck || scopeAck) &&
     !saving;
 
   const write = useCallback(async () => {
@@ -165,7 +166,7 @@ export default function FormulatePage() {
           gates: { risk: !!cleared['risk'], dial: !!cleared['dial'], calibrated: !!cleared['calibrated'] },
           floor: shown,
           protocolSlug: null,
-          scopeAck,
+          outsideStack: outside,
         }),
       });
       setWritten({ version: out.version });
@@ -174,13 +175,12 @@ export default function FormulatePage() {
       // the record, and it is append-only.
       setNote('');
       setFalsify('');
-      setScopeAck(false);
     } catch (e) {
       setProblem(e instanceof ApiError ? e.message : 'Could not write the formulation.');
     } finally {
       setSaving(false);
     }
-  }, [clientId, shown, note, falsify, ticked, cleared, scopeAck]);
+  }, [clientId, shown, note, falsify, ticked, cleared, outside]);
 
   const pick = (n: number) => setSelected(n);
   const onKey = (n: number) => (e: React.KeyboardEvent) => {
@@ -263,57 +263,12 @@ export default function FormulatePage() {
       </section>
 
       <div className="work">
-        <div className="buildingwrap">
-          <svg className="building" viewBox="0 0 200 340" role="img" aria-label="Eight floors of the self, floor one at the top">
-            <g>
-              {FLOOR_CONTENT.filter((x) => x.n <= 7).map((x) => {
-                const y = FLOOR_Y(x.n);
-                const lit = isLit(scores, max, x.n, gatesOk);
-                return (
-                  <g
-                    key={x.n}
-                    className={`floor${lit ? ' lit' : ''}${x.n === shown ? ' sel' : ''}`}
-                    tabIndex={0}
-                    role="button"
-                    aria-label={`Floor ${x.n}, ${x.name}`}
-                    onClick={() => pick(x.n)}
-                    onKeyDown={onKey(x.n)}
-                  >
-                    <rect className="fl-body" x={22} y={y} width={156} height={35} />
-                    {[0, 1, 2, 3, 4].map((w) => (
-                      <rect key={w} className="win" x={34 + w * 27} y={y + 22} width={11} height={7} />
-                    ))}
-                    <text className="fl-num" x={30} y={y + 15}>
-                      {x.n}
-                    </text>
-                    <text className="fl-label" x={44} y={y + 15}>
-                      {x.name}
-                    </text>
-                  </g>
-                );
-              })}
-            </g>
-            <rect
-              className={`ground${isLit(scores, max, 8, gatesOk) ? ' lit' : ''}`}
-              x={8}
-              y={292}
-              width={184}
-              height={34}
-              tabIndex={0}
-              role="button"
-              aria-label="Floor 8, the cultural substrate"
-              onClick={() => pick(8)}
-              onKeyDown={onKey(8)}
-            />
-            <text className="fl-num" x={16} y={313}>
-              8
-            </text>
-            <text className="fl-label" x={30} y={313}>
-              {floor(8)?.name}
-            </text>
-          </svg>
-          <p className="b-cap">{BUILDING_CAPTION}</p>
-        </div>
+        <Building
+          classFor={(n) => (isLit(scores, max, n, gatesOk) ? 'lit' : '')}
+          selected={shown}
+          onPick={pick}
+          caption={BUILDING_CAPTION}
+        />
 
         <div>
           <h2>{OBSERVATIONS_HEADING}</h2>
@@ -342,6 +297,17 @@ export default function FormulatePage() {
               </span>
             </div>
             <div className="result-body">
+              {/*
+                The scope gate: above the protocol chips, because it is about
+                whether this clinician should be reaching for them at all. It
+                annotates and never blocks — writing the formulation still
+                works, and the boolean goes on the row.
+              */}
+              {outside && shown ? (
+                <p className="warn scope">
+                  {outsideStackLine(shown)} <Link href="/stack">Your stack</Link>.
+                </p>
+              ) : null}
               <dl style={{ margin: 0 }}>
                 <div className="rrow">
                   <dt>What lives here</dt>
@@ -399,23 +365,6 @@ export default function FormulatePage() {
                 <span className="hint">{FALSIFY_HINT}</span>
                 <textarea rows={3} value={falsify} onChange={(e) => setFalsify(e.target.value)} />
               </label>
-
-              {needsAck ? (
-                <div className="callout warning">
-                  <span className="c-title">
-                    {scope === 'stretch' ? 'Working literacy only' : 'Outside your stack'}
-                  </span>
-                  <p>{scope === 'stretch' ? SCOPE_STRETCH : SCOPE_UNCOVERED}</p>
-                  <label className="tick">
-                    <input type="checkbox" checked={scopeAck} onChange={(e) => setScopeAck(e.target.checked)} />
-                    <span>{SCOPE_ACK_LABEL}</span>
-                  </label>
-                  <p className="meta">
-                    Your stack is on <Link href="/stack">the stack page</Link>. This does not stop you writing it —
-                    the answer is kept on the row.
-                  </p>
-                </div>
-              ) : null}
 
               {problem ? <p className="warn">{problem}</p> : null}
               {written ? (

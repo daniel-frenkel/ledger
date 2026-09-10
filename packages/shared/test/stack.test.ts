@@ -1,9 +1,13 @@
 /**
- * The training stack, against the document it came from.
+ * The training stack: tiers, coverage, and the scope gate.
  *
- * docs/theory/tools/training-stack.md is re-read on every run, so a modality
- * renamed or a floor reassigned there fails here rather than drifting quietly
- * into a scope verdict that no longer matches the author's own table.
+ * There is no catalogue in this package, so there is nothing here to check
+ * against `docs/theory/modalities.md` — that check lives in
+ * `apps/clinician/test/content.test.ts`, next to the module that holds the
+ * data. What is checked here is the arithmetic, with modalities handed in.
+ *
+ * The tiers are still checked against `docs/theory/tools/training-stack.md`,
+ * because the tiers are this module's own.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,20 +15,23 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   CAPPED_TIERS,
-  MODALITIES,
+  COVERAGE_LEVELS,
   MODALITY_SLUGS,
+  STACK_DISCLAIMER,
   TIERS,
   TIER_IDS,
   coverage,
+  coverageOf,
   isModalitySlug,
-  modality,
-  scopeFor,
-  scopeGate,
-  scopeNeedsAck,
+  isOutsideStack,
+  levelFor,
+  outsideStack,
+  outsideStackLine,
   stackWarnings,
   tierRank,
   unknownModalitySlugs,
   type StackEntry,
+  type StackModality,
 } from '../src/stack/index.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -33,10 +40,17 @@ const DOC = fs
   .readFileSync(path.join(root, 'docs/theory/tools/training-stack.md'), 'utf8')
   .replace(/\r\n?/g, '\n');
 
-/** The modality column of the worked-example table, in the document's order. */
-const docRows = DOC.split('\n')
-  .filter((l) => /^\|\s*\*\*/.test(l))
-  .map((l) => l.split('|')[1]!.replace(/\*\*/g, '').trim());
+/**
+ * A stand-in for the modalities module, shaped the way it hands data in.
+ * Deliberately not the real catalogue: these functions must work on whatever
+ * they are given, and pinning them to real slugs here would recreate the fork.
+ */
+const M: StackModality[] = [
+  { slug: 'alpha', name: 'Alpha', floors: [3, 5], dimmer: false },
+  { slug: 'beta', name: 'Beta', floors: [5, 6, 7], dimmer: false },
+  { slug: 'gamma', name: 'Gamma', floors: [], dimmer: true },
+  { slug: 'delta', name: 'Delta', floors: [4], dimmer: true },
+];
 
 describe('the tiers', () => {
   it('is the four the document names', () => {
@@ -51,154 +65,156 @@ describe('the tiers', () => {
     expect(tierRank('not-a-tier')).toBe(0);
   });
 
-  it('caps exactly the two tiers the reading rules cap', () => {
-    expect(CAPPED_TIERS).toEqual(['master', 'deep']);
-    expect(TIERS.filter((t) => t.limit === null).map((t) => t.id)).toEqual(['fluent', 'literacy']);
+  it('carries both of the document’s names for the fourth tier', () => {
+    expect(TIERS.find((t) => t.id === 'literacy')!.name).toBe('Working literacy / Conversant');
+    expect(DOC).toContain('**Working literacy / Conversant**');
   });
 
-  it('carries both of the document’s names for the fourth tier', () => {
-    const literacy = TIERS.find((t) => t.id === 'literacy')!;
-    expect(literacy.name).toBe('Working literacy / Conversant');
-    expect(DOC).toContain('**Working literacy / Conversant**');
+  it('marks Master and Deep as the capped tiers, which the app warns about', () => {
+    expect(CAPPED_TIERS).toEqual(['master', 'deep']);
   });
 });
 
-describe('the catalogue', () => {
-  it('has one entry per row of the worked example, in the same order', () => {
-    expect(MODALITIES).toHaveLength(docRows.length);
-    expect(MODALITIES.map((m) => m.name)).toEqual(docRows);
-  });
-
-  it('gives every modality a unique slug', () => {
-    expect(new Set(MODALITY_SLUGS).size).toBe(MODALITIES.length);
-  });
-
-  it('marks exactly the two dimmer modalities, and gives them no floor', () => {
-    const dimmers = MODALITIES.filter((m) => m.dimmer);
-    expect(dimmers.map((m) => m.slug)).toEqual(['person-centered', 'motivational-interviewing']);
-    for (const d of dimmers) expect(d.floors, d.slug).toEqual([]);
-  });
-
-  it('gives every non-dimmer modality at least one floor in range', () => {
-    for (const m of MODALITIES.filter((x) => !x.dimmer)) {
-      expect(m.floors.length, m.slug).toBeGreaterThan(0);
-      for (const f of m.floors) expect(f, m.slug).toBeGreaterThanOrEqual(1);
-      for (const f of m.floors) expect(f, m.slug).toBeLessThanOrEqual(8);
-    }
-  });
-
-  it('covers all eight floors between them, which is the document’s claim', () => {
-    const all = new Set(MODALITIES.flatMap((m) => m.floors));
-    expect([...all].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
-  });
-
-  it('recognises a slug, and names the ones it does not', () => {
-    expect(isModalitySlug('act')).toBe(true);
+describe('the slug mirror', () => {
+  it('recognises a slug and names the ones it does not', () => {
+    expect(isModalitySlug('cbt')).toBe(true);
     expect(isModalitySlug('emdr-but-spelled-wrong')).toBe(false);
-    expect(unknownModalitySlugs(['act', 'nope', 7])).toEqual(['nope', '7']);
-    expect(modality('act')?.floors).toContain(5);
+    expect(unknownModalitySlugs(['cbt', 'nope', 7])).toEqual(['nope', '7']);
+  });
+
+  it('holds slugs and nothing else — no names, no floors, no levers', () => {
+    // The moment this list grows a second field it is a catalogue, and there is
+    // already one. apps/clinician/test/content.test.ts pins it to the module.
+    for (const s of MODALITY_SLUGS) expect(typeof s).toBe('string');
+    expect(new Set(MODALITY_SLUGS).size).toBe(MODALITY_SLUGS.length);
   });
 });
 
 describe('coverage', () => {
   const stack: StackEntry[] = [
-    { slug: 'act', tier: 'master' },
-    { slug: 'cbt', tier: 'fluent' },
-    { slug: 'dbt', tier: 'literacy' },
+    { slug: 'alpha', tier: 'master' },
+    { slug: 'beta', tier: 'literacy' },
+    { slug: 'gamma', tier: 'fluent' },
   ];
 
-  it('reports the best tier reaching each floor', () => {
-    const c = coverage(stack);
-    expect(c[5]).toBe('master'); // ACT and CBT and DBT all reach 5; ACT is deepest
-    expect(c[3]).toBe('fluent'); // CBT only
-    expect(c[7]).toBe('literacy'); // DBT only
-    expect(c[4]).toBeNull();
+  it('reports all eight floors, deepest tier first, with the modalities reaching each', () => {
+    const c = coverage(stack, M);
+    expect(c.floors.map((f) => f.floor)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+
+    expect(coverageOf(c, 5)).toMatchObject({ tier: 'master', level: 'specialist', modalities: ['alpha', 'beta'] });
+    expect(coverageOf(c, 3)).toMatchObject({ tier: 'master', modalities: ['alpha'] });
+    expect(coverageOf(c, 7)).toMatchObject({ tier: 'literacy', level: 'literacy', modalities: ['beta'] });
+    expect(coverageOf(c, 1)).toMatchObject({ tier: null, level: 'gap', modalities: [] });
   });
 
-  it('always reports all eight floors, so a missing one is null and not absent', () => {
-    expect(Object.keys(coverage([]))).toHaveLength(8);
-    expect(Object.values(coverage([])).every((v) => v === null)).toBe(true);
+  it('names the levels the way the prompt does', () => {
+    expect(COVERAGE_LEVELS).toEqual(['specialist', 'in-stack', 'literacy', 'gap']);
+    expect(levelFor('master')).toBe('specialist');
+    expect(levelFor('deep')).toBe('specialist');
+    expect(levelFor('fluent')).toBe('in-stack');
+    expect(levelFor('literacy')).toBe('literacy');
+    expect(levelFor(null)).toBe('gap');
   });
 
-  it('gives a dimmer modality no coverage however deeply it is held', () => {
-    expect(Object.values(coverage([{ slug: 'person-centered', tier: 'master' }])).every((v) => v === null)).toBe(
-      true,
-    );
+  it('puts a dimmer modality in the dimmer layer and on no floor', () => {
+    const c = coverage([{ slug: 'gamma', tier: 'master' }], M);
+    expect(c.dimmer).toEqual(['gamma']);
+    expect(c.floors.every((f) => f.level === 'gap')).toBe(true);
   });
 
-  it('ignores a slug that names no modality rather than throwing', () => {
-    expect(coverage([{ slug: 'not-a-modality', tier: 'master' } as StackEntry])[1]).toBeNull();
+  it('lets a modality reach a floor and be a dimmer at the same time', () => {
+    // Person-Centered is the real case: conditions, and floor 4 when the
+    // regard is put at risk.
+    const c = coverage([{ slug: 'delta', tier: 'fluent' }], M);
+    expect(c.dimmer).toEqual(['delta']);
+    expect(coverageOf(c, 4)).toMatchObject({ level: 'in-stack' });
+  });
+
+  it('ignores a slug the modalities do not define, rather than throwing', () => {
+    const c = coverage([{ slug: 'not-a-modality', tier: 'master' }], M);
+    expect(c.floors.every((f) => f.level === 'gap')).toBe(true);
+    expect(c.dimmer).toEqual([]);
+  });
+
+  it('handles an empty stack and an empty catalogue', () => {
+    expect(coverage([], M).floors).toHaveLength(8);
+    expect(coverage([{ slug: 'alpha', tier: 'master' }], []).dimmer).toEqual([]);
   });
 });
 
 describe('the scope gate', () => {
   const stack: StackEntry[] = [
-    { slug: 'act', tier: 'master' },
-    { slug: 'cbt', tier: 'fluent' },
-    { slug: 'dbt', tier: 'literacy' },
+    { slug: 'alpha', tier: 'fluent' }, // 3, 5
+    { slug: 'beta', tier: 'literacy' }, // 5, 6, 7
   ];
 
-  it('is covered at fluent or better', () => {
-    expect(scopeFor(stack, 3)).toBe('covered');
-    expect(scopeFor(stack, 5)).toBe('covered');
+  it('is inside the stack at fluent or deeper', () => {
+    expect(outsideStack(stack, M, 3)).toBe(false);
+    expect(outsideStack(stack, M, 5)).toBe(false);
   });
 
-  it('is a stretch when the floor is reached only at working literacy', () => {
-    expect(scopeFor(stack, 7)).toBe('stretch');
+  it('is outside it at working literacy, and where nothing reaches', () => {
+    expect(outsideStack(stack, M, 7)).toBe(true);
+    expect(outsideStack(stack, M, 1)).toBe(true);
   });
 
-  it('is uncovered when nothing reaches the floor', () => {
-    expect(scopeFor(stack, 4)).toBe('uncovered');
-    expect(scopeFor([], 1)).toBe('uncovered');
+  it('says nothing to a clinician with no stack on file', () => {
+    // You cannot be outside a stack you have not written down.
+    expect(outsideStack([], M, 7)).toBe(false);
   });
 
-  it('treats an unplaced formulation as uncovered rather than covered', () => {
-    // Null floor means the locator has not placed it. Defaulting that to
-    // "covered" would let the one case with no reading skip the gate.
-    expect(scopeFor(stack, null)).toBe('uncovered');
+  it('says nothing when the locator has placed nothing', () => {
+    expect(outsideStack(stack, M, null)).toBe(false);
   });
 
-  it('asks for an acknowledgement for everything but covered', () => {
-    expect(scopeNeedsAck('covered')).toBe(false);
-    expect(scopeNeedsAck('stretch')).toBe(true);
-    expect(scopeNeedsAck('uncovered')).toBe(true);
+  it('maps levels to the annotation the same way every time', () => {
+    expect(isOutsideStack('specialist')).toBe(false);
+    expect(isOutsideStack('in-stack')).toBe(false);
+    expect(isOutsideStack('literacy')).toBe(true);
+    expect(isOutsideStack('gap')).toBe(true);
   });
 
-  /**
-   * The arithmetic and the gate are different questions. scopeFor says what a
-   * stack covers; scopeGate says whether the gate applies at all.
-   */
-  it('does not apply to a clinician with no stack on file', () => {
-    expect(scopeGate([], 3)).toBeNull();
-    expect(scopeNeedsAck(scopeGate([], 3))).toBe(false);
-    // The arithmetic still says what it says.
-    expect(scopeFor([], 3)).toBe('uncovered');
+  it('uses the line the prompt specifies, verbatim', () => {
+    expect(outsideStackLine(6)).toBe('Floor 6 is outside your stack at this tier — refer, co-treat, or supervise.');
   });
 
-  it('applies as soon as there is one row', () => {
-    expect(scopeGate([{ slug: 'cbt', tier: 'fluent' }], 3)).toBe('covered');
-    expect(scopeGate([{ slug: 'cbt', tier: 'fluent' }], 7)).toBe('uncovered');
+  it('never refuses: there is no function here that can return a failure', () => {
+    // The gate annotates. If this module ever grows something that says "no",
+    // the design has changed and this test should be the thing that notices.
+    expect(typeof outsideStack(stack, M, 7)).toBe('boolean');
   });
 });
 
 describe('the reading rules, as warnings', () => {
   it('says nothing about a stack that follows them', () => {
     const full: StackEntry[] = [
-      { slug: 'act', tier: 'master' },
-      { slug: 'cbt', tier: 'fluent' },
-      { slug: 'person-centered', tier: 'fluent' },
-      { slug: 'motivational-interviewing', tier: 'fluent' },
-      { slug: 'psychodynamic', tier: 'literacy' },
-      { slug: 'experiential', tier: 'deep' },
-      { slug: 'existential', tier: 'literacy' },
-      { slug: 'multicultural', tier: 'literacy' },
-      { slug: 'dbt', tier: 'literacy' },
+      { slug: 'alpha', tier: 'master' },
+      { slug: 'beta', tier: 'fluent' },
+      { slug: 'gamma', tier: 'fluent' },
+      { slug: 'delta', tier: 'fluent' },
     ];
-    expect(stackWarnings(full)).toEqual([]);
+    // alpha 3/5, beta 5/6/7, delta 4 — floors 1, 2, 8 are still gaps.
+    const w = stackWarnings(full, full.length ? M : M);
+    expect(w.join(' ')).toMatch(/No tool reaches floors 1, 2, 8/);
+    expect(w.join(' ')).not.toMatch(/No Master|three Fluent|dimmer/);
   });
 
-  it('names a missing Master, thin Fluents, uncovered floors and a missing dimmer', () => {
-    const w = stackWarnings([{ slug: 'cbt', tier: 'fluent' }]);
+  it('warns about a second Master and a second Deep rather than refusing them', () => {
+    const w = stackWarnings(
+      [
+        { slug: 'alpha', tier: 'master' },
+        { slug: 'beta', tier: 'master' },
+        { slug: 'gamma', tier: 'deep' },
+        { slug: 'delta', tier: 'deep' },
+      ],
+      M,
+    );
+    expect(w.join(' ')).toMatch(/More than one Master/);
+    expect(w.join(' ')).toMatch(/More than one Deep/);
+  });
+
+  it('names a missing Master, thin Fluents, gaps and a missing dimmer', () => {
+    const w = stackWarnings([{ slug: 'alpha', tier: 'fluent' }], M);
     expect(w.join(' ')).toMatch(/No Master/);
     expect(w.join(' ')).toMatch(/three Fluent/);
     expect(w.join(' ')).toMatch(/floors 1, 2, 4, 6, 7, 8/);
@@ -207,14 +223,19 @@ describe('the reading rules, as warnings', () => {
 
   it('says "floor" for one and "floors" for several', () => {
     const nearly: StackEntry[] = [
-      { slug: 'act', tier: 'master' },
-      { slug: 'cbt', tier: 'fluent' },
-      { slug: 'person-centered', tier: 'fluent' },
-      { slug: 'psychodynamic', tier: 'fluent' },
-      { slug: 'dbt', tier: 'fluent' },
+      { slug: 'alpha', tier: 'master' },
+      { slug: 'beta', tier: 'fluent' },
+      { slug: 'gamma', tier: 'fluent' },
+      { slug: 'delta', tier: 'fluent' },
     ];
-    // ACT 1/2/5, CBT 3/5, psychodynamic 4/6, DBT 5/7 — everything but the
-    // substrate, which only the multicultural row reaches.
-    expect(stackWarnings(nearly).join(' ')).toMatch(/reaches floor 8\b/);
+    expect(stackWarnings(nearly, M).join(' ')).toMatch(/floors 1, 2, 8/);
+    const one: StackModality[] = [{ slug: 'alpha', name: 'A', floors: [1, 2, 3, 4, 5, 6, 7], dimmer: true }];
+    expect(stackWarnings([{ slug: 'alpha', tier: 'master' }], one).join(' ')).toMatch(/reaches floor 8/);
+  });
+});
+
+describe('the disclaimer', () => {
+  it('is verbatim', () => {
+    expect(STACK_DISCLAIMER).toBe('Self-declared. Not a credential. Never shown to clients.');
   });
 });

@@ -58,13 +58,29 @@ Rules, all of them absolute:
 - Every evidence span must be copied character-for-character from the note. Do not paraphrase, correct spelling, expand an abbreviation, or trim to a nicer boundary. A span that is not an exact substring of the note is discarded, and the sign with it.
 - Mark a sign only where the note reports what the clinician observed. ${SIGNS_NOT_SELF_REPORT}. If the note is mostly the client's own account of themselves with little the clinician observed, return selfReportOnly: true.
 - Gates: you may ask, you may never answer. Return a gate key when the note gives no evidence that gate was addressed. You are not clearing it and not judging it; the clinician attests, separately, and nothing you return can substitute for that.
-- If the note supports no sign, return an empty observations array. An empty answer is a correct answer.`;
+- If the note supports no sign, return an empty observations array. An empty answer is a correct answer.
+- The clinician's training stack may be given to you below: which modalities they can run, and at what depth. Never suggest a modality their stack lacks as something for them to run. Where the floor the signs point at is outside their stack, the move is referral, co-treatment or supervision, in the corpus's own language — and you say none of this in prose anyway, because you have no field for it. It constrains what you mark, not what you write.`;
+
+/**
+ * The clinician's stack, as the model may see it.
+ *
+ * Modality and tier only, and only because it is theirs: a clinician's
+ * training is not client data, and nothing about a client is derivable from it.
+ * It goes in so the model is not silently reasoning as though every tool were
+ * available. It never widens what the model may return — the output schema is
+ * the same three fields with or without it.
+ */
+export function stackBlock(stack: readonly { slug: string; tier: string }[]): string {
+  if (stack.length === 0) return '';
+  const rows = stack.map((s) => `- ${s.slug}: ${s.tier}`).join('\n');
+  return ['', '', "## The clinician's training stack", '', rows].join('\n');
+}
 
 let cached: string | undefined;
 
 /** The system prompt. Built once per process; throws if a document is missing. */
-export function systemPrompt(): string {
-  cached ??= `You are a locating aid inside a clinician's case-formulation tool. You are not a therapist, you do not treat anyone, and predictive processing is the framework this tool is built on, not a validated treatment.
+export function systemPrompt(stack: readonly { slug: string; tier: string }[] = []): string {
+  const base = (cached ??= `You are a locating aid inside a clinician's case-formulation tool. You are not a therapist, you do not treat anyone, and predictive processing is the framework this tool is built on, not a validated treatment.
 
 ${RULES}
 
@@ -78,8 +94,8 @@ ${GATE_KEYS.map((k) => `- ${k}: ${GATE_QUESTIONS[k]}`).join('\n')}
 
 ## The procedure this tool implements
 
-${readCorpus()}`;
-  return cached;
+${readCorpus()}`);
+  return base + stackBlock(stack);
 }
 
 /**

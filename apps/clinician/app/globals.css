@@ -1008,3 +1008,108 @@ h2.notehead {
   font-size: 0.7rem;
   padding: 0.25rem 0.5rem;
 }
+
+/* ---------------------------------------------------------------------------
+   Your stack — the building shaded by coverage rather than lit by a tick.
+   Four levels, deepest darkest. A gap is left as plain wall: the absence is
+   the information, and colouring it would make it look like a category.
+   --------------------------------------------------------------------------- */
+g.floor.cov-specialist .fl-body,
+rect.ground.cov-specialist {
+  fill: var(--brass);
+  stroke: var(--brass);
+}
+g.floor.cov-specialist .fl-num,
+g.floor.cov-specialist .fl-label {
+  fill: var(--paper);
+  font-weight: 600;
+}
+g.floor.cov-specialist .win {
+  fill: var(--brass-soft);
+}
+g.floor.cov-in-stack .fl-body,
+rect.ground.cov-in-stack {
+  fill: var(--brass-soft);
+  stroke: var(--brass);
+}
+g.floor.cov-in-stack .fl-num,
+g.floor.cov-in-stack .fl-label {
+  fill: var(--brass);
+  font-weight: 600;
+}
+g.floor.cov-literacy .fl-body,
+rect.ground.cov-literacy {
+  fill: transparent;
+  stroke: var(--brass);
+  stroke-dasharray: 3 3;
+}
+g.floor.cov-gap {
+  opacity: 0.55;
+}
+/* Nothing is clickable on this page: the building is a reading, not a control. */
+.stack g.floor {
+  cursor: default;
+}
+
+ul.legend {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+ul.legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.swatch {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.6rem;
+  border: 1px solid var(--brass);
+}
+.swatch.cov-specialist {
+  background: var(--brass);
+}
+.swatch.cov-in-stack {
+  background: var(--brass-soft);
+}
+.swatch.cov-literacy {
+  background: transparent;
+  border-style: dashed;
+}
+.swatch.cov-gap {
+  background: transparent;
+  border-color: var(--rule);
+  opacity: 0.55;
+}
+
+.dimmer-row {
+  margin-top: 0.9rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--rule);
+}
+.dimmer-row .label {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.tabs.sub {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.8rem 0 1.2rem;
+}
+.tabs.sub .btn.on {
+  border-color: var(--brass);
+  color: var(--brass);
+  font-weight: 600;
+}
+
+/* The scope gate's line. A warning in weight, not in colour: it annotates. */
+p.warn.scope {
+  margin: 0 0 0.8rem;
+}

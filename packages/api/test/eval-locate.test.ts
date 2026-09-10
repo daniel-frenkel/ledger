@@ -18,9 +18,19 @@ const fixture = fs.readFileSync(path.join(root!, 'docs/theory/eval/locate-notes.
 const cases = parseCases(fixture);
 
 describe('the eval fixture', () => {
-  it('parses the three scaffolded cases', () => {
-    expect(cases).toHaveLength(3);
-    expect(cases.map((c) => c.id)).toEqual(['case-01', 'case-02', 'case-03']);
+  it('parses the scaffolded cases, including the scope one', () => {
+    expect(cases.map((c) => c.id)).toEqual(['case-01', 'case-02', 'case-03', 'case-04']);
+  });
+
+  /**
+   * The scope row exercises the rule the training stack adds to the system
+   * prompt: never propose a modality the clinician's stack lacks. It is here so
+   * a prompt edit that drops the rule fails visibly rather than quietly.
+   */
+  it('carries a case about the clinician’s reach, not only the client’s floor', () => {
+    const scope = cases.find((c) => c.id === 'case-04')!;
+    expect(scope.floor).toBe(7);
+    expect(fixture).toMatch(/referral, co-treatment or supervision/);
   });
 
   it('gives every case a floor, a note, and at least one sign', () => {

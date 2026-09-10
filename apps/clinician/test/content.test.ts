@@ -13,25 +13,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { FLOORS, LIT_THRESHOLD, OBSERVATIONS, isLit, scoreFloors } from '@ledger/shared';
+import { FLOORS, LIT_THRESHOLD, MODALITY_SLUGS, OBSERVATIONS, isLit, scoreFloors } from '@ledger/shared';
 
 import { REFERENCES, TIERS, isVerified, reference, referenceKeys, unverified } from '../content/references';
 import { FLOOR_CONTENT, FLOOR_CAVEATS } from '../content/floors';
-import {
-  GATES,
-  GATE_3_FOOTNOTE,
-  SCOPE_ACK_LABEL,
-  SCOPE_STRETCH,
-  SCOPE_UNCOVERED,
-  warningFor,
-} from '../content/observations';
+import { GATES, GATE_3_FOOTNOTE, warningFor } from '../content/observations';
 import {
   FLOOR_ROUTED_BY_DOCUMENT,
   PROTOCOLS,
   protoTitlesForFloor,
   protocolByTitle,
 } from '../content/protocols';
-import { CANON, CORE_SIX, FLOOR_TOKENS, floorsIn, modalitiesForFloor } from '../content/modalities';
+import {
+  CANON,
+  CORE_SIX,
+  FLOOR_TOKENS,
+  STACK_MODALITIES,
+  STACK_MODALITY_SLUGS,
+  floorsIn,
+  modalitiesForFloor,
+} from '../content/modalities';
 import { ALL_SECTIONS, MODALITY_SECTIONS } from '../content/modality-sections';
 import { MODEL_BLOCKS } from '../content/model';
 import { inviteUrl } from '../lib/invite-url';
@@ -436,28 +437,61 @@ describe('inviteUrl', () => {
 });
 
 /**
- * The scope gate's copy, and the same rule the weights get: the app states the
- * gate, it does not hold a second copy of the catalogue the gate reads.
+ * The stack view of the modality crosswalk.
+ *
+ * This module is the single source for modality slugs and home floors.
+ * @ledger/shared holds no catalogue — it takes STACK_MODALITIES as an argument
+ * — with one exception, MODALITY_SLUGS, which the API validates against and
+ * which cannot import from an app. That list is a mirror, and this is what
+ * pins it: add a modality here without adding the slug there and the build
+ * fails rather than the modality becoming unstorable.
  */
-describe('the scope gate copy', () => {
-  it('says what a stretch and an uncovered floor mean, and neither refuses', () => {
-    for (const s of [SCOPE_STRETCH, SCOPE_UNCOVERED]) {
-      expect(s).toMatch(/supervision|referral/i);
-      expect(s).not.toMatch(/cannot|not allowed|forbidden/i);
+describe('STACK_MODALITIES', () => {
+  it('is exactly the slug set the API accepts', () => {
+    expect([...STACK_MODALITY_SLUGS].sort()).toEqual([...MODALITY_SLUGS].sort());
+  });
+
+  it('gives every modality a unique slug and a name with no markdown left in it', () => {
+    expect(new Set(STACK_MODALITY_SLUGS).size).toBe(STACK_MODALITIES.length);
+    for (const m of STACK_MODALITIES) {
+      expect(m.name, m.slug).not.toMatch(/\*|\(\d+\)/);
+      expect(m.slug).toMatch(/^[a-z0-9-]+$/);
     }
-    expect(SCOPE_STRETCH).toMatch(/working literacy/i);
-    expect(SCOPE_UNCOVERED).toMatch(/nothing in your stack/i);
   });
 
-  it('makes the acknowledgement an admission rather than a formality', () => {
-    expect(SCOPE_ACK_LABEL).toMatch(/anyway/i);
+  it('takes its floors from the home-floors column, ranges expanded', () => {
+    // ACT's row is "2, 6–7": the range reaches both, which is floorsIn's job.
+    expect(STACK_MODALITIES.find((m) => m.slug === 'act')!.floors).toEqual([2, 6, 7]);
   });
 
-  it('holds no second copy of the modality catalogue', () => {
-    const src = fs.readFileSync(path.join(here, '../content/observations.ts'), 'utf8');
-    // A slug list here would be a fork of docs/theory/tools/training-stack.md
-    // that typechecks. The catalogue is @ledger/shared's.
-    expect(src).not.toMatch(/slug:\s*'[a-z-]+'/);
-    expect(src).not.toContain('person-centered');
+  it('gives the qualifiers no floor and puts them in the dimmer layer', () => {
+    // MI is "change process" alone: no floor at all.
+    const mi = STACK_MODALITIES.find((m) => m.slug === 'motivational-interviewing')!;
+    expect(mi.floors).toEqual([]);
+    expect(mi.dimmer).toBe(true);
+
+    // Person-Centered is conditions *and* floor 4 when the regard is at risk.
+    const pc = STACK_MODALITIES.find((m) => m.slug === 'person-centered')!;
+    expect(pc.floors).toEqual([4]);
+    expect(pc.dimmer).toBe(true);
+  });
+
+  it('unions the two tables where a modality appears in both', () => {
+    // Psychodynamic/EFT is in the core six and again in the canon as
+    // Psychoanalytic (4); one row, both sets of floors.
+    expect(STACK_MODALITIES.find((m) => m.slug === 'psychodynamic-eft')!.floors).toEqual([4, 6]);
+  });
+
+  it('reaches every floor between them, which is the coverage claim', () => {
+    const all = new Set(STACK_MODALITIES.flatMap((m) => m.floors));
+    expect([...all].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+
+  it('holds no floors of its own: every one is derivable from the source rows', () => {
+    // floorsIn() over the home-floors text is the only way a floor gets here.
+    for (const m of STACK_MODALITIES) {
+      for (const f of m.floors) expect(f, m.slug).toBeGreaterThanOrEqual(1);
+      for (const f of m.floors) expect(f, m.slug).toBeLessThanOrEqual(8);
+    }
   });
 });
