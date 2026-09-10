@@ -19,7 +19,6 @@ import {
   CLIENT_A,
   CLIENT_B,
   CLINICIAN,
-  DEVICE_A,
   LogSink,
   asUser,
   buildApp,
@@ -61,24 +60,32 @@ afterEach(async () => {
   await app.close();
 });
 
-/** A ledger for CLIENT_A: a prediction with a prior, a body state, a reinterpretation, a journal entry, a device. */
-async function seed(who = CLIENT_A): Promise<void> {
+/**
+ * A ledger for `who`: a prediction with a prior, a body state, a
+ * reinterpretation, a journal entry, and a device.
+ *
+ * `offset` keeps two seeded users from sharing row ids — the uid() helper is
+ * deterministic, so seeding twice with the same offset is a primary-key
+ * collision rather than a second ledger.
+ */
+async function seed(who = CLIENT_A, offset = 0): Promise<void> {
+  const id = (n: number) => uid(n + offset);
   const res = await app.inject({
     method: 'POST',
     url: '/v1/sync',
     headers: asUser(who),
     payload: {
-      deviceId: DEVICE_A,
+      deviceId: id(700),
       priors: [
-        { id: uid(201), label: 'if I show weakness they withdraw', category: 'mattering', origin: 'client', createdBy: 'client', createdAt: T, clientUpdatedAt: T },
+        { id: id(201), label: 'if I show weakness they withdraw', category: 'mattering', origin: 'client', createdBy: 'client', createdAt: T, clientUpdatedAt: T },
       ],
       predictions: [
         {
-          id: uid(101),
+          id: id(101),
           situation: 'telling the sergeant I froze',
           expectedOutcome: 'he will call me a coward',
           confidence: 80,
-          priorIds: [uid(201)],
+          priorIds: [id(201)],
           resolvedAt: T,
           actualOutcome: 'he nodded',
           outcomeVerdict: 'miss',
@@ -89,12 +96,12 @@ async function seed(who = CLIENT_A): Promise<void> {
           clientUpdatedAt: T,
         },
       ],
-      reinterpretations: [{ id: uid(301), predictionId: uid(101), text: 'he was only being nice', createdAt: T, clientUpdatedAt: T }],
-      journalEntries: [{ id: uid(401), body: 'a thing I wrote', createdAt: T, clientUpdatedAt: T }],
+      reinterpretations: [{ id: id(301), predictionId: id(101), text: 'he was only being nice', createdAt: T, clientUpdatedAt: T }],
+      journalEntries: [{ id: id(401), body: 'a thing I wrote', createdAt: T, clientUpdatedAt: T }],
       bodyStates: [
         {
-          id: uid(501),
-          predictionId: uid(101),
+          id: id(501),
+          predictionId: id(101),
           phase: 'before',
           before: { intensity: 6, words: ['tight'], channels: [], kitPresent: [] },
           createdAt: T,
@@ -104,10 +111,9 @@ async function seed(who = CLIENT_A): Promise<void> {
     },
   });
   expect(res.statusCode).toBe(200);
-  await admin.query(`INSERT INTO devices (id, user_id, expo_push_token) VALUES ($1, $2, 'ExponentPushToken[x]')`, [
-    uid(601),
-    who,
-  ]);
+  // The sync registered a device with no token; give it one, so "push tokens
+  // go immediately" is testing something.
+  await admin.query(`UPDATE devices SET expo_push_token = 'ExponentPushToken[x]' WHERE user_id = $1`, [who]);
 }
 
 const del = (who = CLIENT_A, role: 'client' | 'clinician' = 'client') =>
@@ -168,7 +174,7 @@ describe('DELETE /v1/me', () => {
 
   it('touches nobody else’s rows', async () => {
     await seed(CLIENT_A);
-    await seed(CLIENT_B);
+    await seed(CLIENT_B, 1000);
     await del(CLIENT_A);
 
     expect(await count('predictions', `WHERE user_id = '${CLIENT_B}' AND deleted_at IS NULL`)).toBe(1);
@@ -193,13 +199,14 @@ describe('DELETE /v1/me', () => {
     setAuthAdmin(undefined);
     // No SUPABASE_SERVICE_ROLE_KEY in the test environment, so this is the
     // real unconfigured path rather than a simulated one.
+    const devicesBefore = await count('devices');
     const res = await del();
 
     expect(res.statusCode).toBe(503);
     expect(res.json()).toMatchObject({ code: DELETION_UNAVAILABLE_CODE });
     // Half a deletion is worse than none: nothing moved.
     expect(await count('predictions', 'WHERE deleted_at IS NULL')).toBe(1);
-    expect(await count('devices')).toBe(1);
+    expect(await count('devices')).toBe(devicesBefore);
     expect((await admin.query(`SELECT deleted_at FROM users WHERE id = $1`, [CLIENT_A])).rows[0]!.deleted_at).toBeNull();
   });
 
@@ -234,17 +241,19 @@ describe('DELETE /v1/me', () => {
 });
 
 describe('the purge job', () => {
-  /** Age a soft-deleted account past the grace period. */
-  const age = (days: number) =>
-    admin.query(
-      `UPDATE users SET deleted_at = now() - $1::interval WHERE deleted_at IS NOT NULL;
-       UPDATE predictions SET deleted_at = now() - $1::interval WHERE deleted_at IS NOT NULL;
-       UPDATE priors SET deleted_at = now() - $1::interval WHERE deleted_at IS NOT NULL;
-       UPDATE body_states SET deleted_at = now() - $1::interval WHERE deleted_at IS NOT NULL;
-       UPDATE reinterpretations SET deleted_at = now() - $1::interval WHERE deleted_at IS NOT NULL;
-       UPDATE journal_entries SET deleted_at = now() - $1::interval WHERE deleted_at IS NOT NULL`,
-      [`${days} days`],
-    );
+  /**
+   * Age a soft-deleted account past the grace period. One statement per query:
+   * the wire protocol refuses several in a single parameterised call.
+   */
+  const AGED = ['users', 'predictions', 'priors', 'body_states', 'reinterpretations', 'journal_entries'];
+  const age = async (days: number) => {
+    for (const t of AGED) {
+      await admin.query(
+        `UPDATE ${t} SET deleted_at = now() - $1::interval WHERE deleted_at IS NOT NULL`,
+        [`${days} days`],
+      );
+    }
+  };
 
   it('removes nothing inside the grace period', async () => {
     await seed();
@@ -273,7 +282,7 @@ describe('the purge job', () => {
 
   it('leaves a live account alone', async () => {
     await seed(CLIENT_A);
-    await seed(CLIENT_B);
+    await seed(CLIENT_B, 1000);
     await del(CLIENT_A);
     await age(31);
 
