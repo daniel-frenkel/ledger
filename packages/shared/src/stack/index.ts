@@ -26,9 +26,10 @@ import { FLOORS } from '../floors/index.js';
 /**
  * The four tiers, in the document's order and wording.
  *
- * `literacy` carries both of the document's names for the fourth tier —
- * "Working literacy / Conversant" is one tier described two ways, and the
- * worked example uses each label in different rows.
+ * The fourth is one tier, not two. The worked table writes it two ways —
+ * "Working literacy" for concepts used daily, "Conversant" for formulate and
+ * refer well — and the document is explicit that those are shades of one tier.
+ * One value is stored.
  */
 export const TIERS = [
   {
@@ -56,7 +57,7 @@ export const TIERS = [
   },
   {
     id: 'literacy',
-    name: 'Working literacy / Conversant',
+    name: 'Literacy',
     gloss: 'concepts used, moves borrowed deliberately, referrals made wisely, exams passed',
     limit: null,
     rank: 1,

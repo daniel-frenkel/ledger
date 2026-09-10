@@ -65,9 +65,13 @@ describe('the tiers', () => {
     expect(tierRank('not-a-tier')).toBe(0);
   });
 
-  it('carries both of the document’s names for the fourth tier', () => {
-    expect(TIERS.find((t) => t.id === 'literacy')!.name).toBe('Working literacy / Conversant');
-    expect(DOC).toContain('**Working literacy / Conversant**');
+  it('names the fourth tier as the document names it, as one tier', () => {
+    expect(TIERS.find((t) => t.id === 'literacy')!.name).toBe('Literacy');
+    expect(DOC).toContain('- **Literacy**');
+    // The worked table still writes it two ways. The document says those are
+    // shades of one tier, and one value is what gets stored.
+    expect(DOC).toMatch(/shades of one tier, not two/);
+    expect(TIER_IDS).not.toContain('conversant');
   });
 
   it('marks Master and Deep as the capped tiers, which the app warns about', () => {
