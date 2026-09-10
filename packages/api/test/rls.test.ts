@@ -811,7 +811,7 @@ describe('0003 invites and formulations', () => {
           `INSERT INTO formulations
              (id, clinician_id, client_id, link_id, version, note_enc, falsify_enc,
               observations, gates, floor, scope, scope_ack)
-           VALUES (gen_random_uuid(), $1, $2, $3, $4, '\x00'::bytea, '\x00'::bytea,
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, '\\x00'::bytea, '\\x00'::bytea,
               '[]'::jsonb, '{"risk":true,"dial":true,"calibrated":true}'::jsonb, 6, $5, $6)`,
           [CLINICIAN, CLIENT_A, LINK, version, scope, ack],
         ),
