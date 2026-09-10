@@ -8,6 +8,7 @@ import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { shareLayersSchema, uuid } from '@ledger/shared';
 import { schema, withUser } from '../db/client.js';
+import { newId } from '../ids.js';
 
 const links: FastifyPluginAsync = async (app) => {
   app.get('/v1/links', async (request) => {
@@ -18,7 +19,8 @@ const links: FastifyPluginAsync = async (app) => {
     const body = z.object({ clinicianId: uuid, layers: shareLayersSchema.partial().optional() }).safeParse(request.body);
     if (!body.success) return reply.status(400).send({ error: 'invalid payload' });
     if (request.user.role !== 'client') return reply.status(403).send({ error: 'clients invite clinicians' });
-    const id = crypto.randomUUID();
+    // v7, per the schema's convention: time-ordered, so rows sort by creation.
+    const id = newId();
     await withUser(request.user, (tx) =>
       tx.insert(schema.clinicianClientLinks).values({
         id,

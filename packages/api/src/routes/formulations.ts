@@ -20,19 +20,19 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { uuid } from '@ledger/shared';
+import { GATE_KEYS, allGatesCleared, gatesSchema, uuid, unknownObservationIds } from '@ledger/shared';
 import { schema, withUser } from '../db/client.js';
 import { decryptField, encryptField } from '../crypto/fields.js';
 import { newId } from '../ids.js';
 
-/** The clinician's attestation. Never the assistant's. */
-export const gatesSchema = z.object({ risk: z.boolean(), dial: z.boolean(), calibrated: z.boolean() });
-export type Gates = z.infer<typeof gatesSchema>;
+/**
+ * The clinician's attestation, and the gate rule. Both from @ledger/shared, so
+ * the locator that collects the attestation and the route that refuses it
+ * cannot disagree.
+ */
+export { GATE_KEYS as GATE_NAMES, allGatesCleared, gatesSchema } from '@ledger/shared';
 
-export const GATE_NAMES = ['risk', 'dial', 'calibrated'] as const;
-
-/** Every gate attested. The DB checks shape; this checks the answer. */
-export const allGatesCleared = (g: Gates): boolean => GATE_NAMES.every((k) => g[k] === true);
+export const UNKNOWN_OBSERVATIONS = 'Some observation ids are not signs the locator knows.';
 
 export const GATES_NOT_CLEARED =
   'Every gate has to be cleared before a formulation is written. Locating past an open gate hands the prior fresh evidence with your signature on it.';
@@ -42,12 +42,8 @@ const bodySchema = z.object({
   note: z.string().min(1),
   /** What would show this placement wrong. Required, by the proposal. */
   falsify: z.string().min(1),
-  /**
-   * Observation ids from the locator's list. Part 3 moves that list into
-   * @ledger/shared and this becomes a membership check; until then the bound
-   * is structural only.
-   */
-  observations: z.array(z.number().int().nonnegative()),
+  /** Observation ids from the locator's list in @ledger/shared. */
+  observations: z.array(z.string()),
   gates: gatesSchema,
   floor: z.number().int().min(1).max(8),
   protocolSlug: z
@@ -68,8 +64,14 @@ const formulations: FastifyPluginAsync = async (app) => {
     }
     const b = body.data;
     if (b.clientId === request.user.id) return reply.status(400).send({ error: 'invalid payload', fields: ['clientId'] });
+    // Membership, not shape: an id that names no sign would be stored forever
+    // and score as nothing, which is worse than a refusal.
+    const unknown = unknownObservationIds(b.observations);
+    if (unknown.length > 0) {
+      return reply.status(422).send({ error: UNKNOWN_OBSERVATIONS, unknown });
+    }
     if (!allGatesCleared(b.gates)) {
-      return reply.status(422).send({ error: GATES_NOT_CLEARED, fields: GATE_NAMES.filter((k) => !b.gates[k]) });
+      return reply.status(422).send({ error: GATES_NOT_CLEARED, fields: GATE_KEYS.filter((k) => !b.gates[k]) });
     }
 
     const id = newId();

@@ -294,16 +294,8 @@ export type CrisisResourceId = keyof typeof CRISIS_RESOURCES;
 // Floors of the self — clinician/documentation use only. Not shown to clients.
 // ---------------------------------------------------------------------------
 
-export const FLOORS = [
-  { n: 1, name: 'Narrative' },
-  { n: 2, name: 'Metacognition' },
-  { n: 3, name: 'Propositional beliefs' },
-  { n: 4, name: 'Relational patterns' },
-  { n: 5, name: 'Scripts and behavior' },
-  { n: 6, name: 'Procedure and emotion' },
-  { n: 7, name: 'Body and interoception' },
-  { n: 8, name: 'The cultural substrate' },
-] as const;
+// FLOORS moved to ../floors/index.ts, alongside the locator's signs and the
+// scoring that reads them. Still exported from the package root.
 
 /** Copy that appears on the "not a therapist" framing, verbatim across surfaces. */
 export const FRAMING = {
