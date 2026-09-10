@@ -372,3 +372,16 @@ CREATE POLICY prediction_priors_research_select ON prediction_priors FOR SELECT 
 --> statement-breakpoint
 CREATE POLICY measures_research_select ON measures FOR SELECT TO ledger_api
   USING (app_research_consented(client_id));
+
+-- ---------------------------------------------------------------------------
+-- The export writes its own audit line.
+--
+-- 0008's insert policy requires actor_id = app_user_id(), which is null in the
+-- system context — so the export could read client rows and leave no trace,
+-- which is the one thing the access log exists to prevent. The system role may
+-- now write a line about itself, and only about itself: actor_role must be
+-- 'system', so this cannot be used to forge a line naming a person.
+-- ---------------------------------------------------------------------------
+--> statement-breakpoint
+CREATE POLICY access_log_system_insert ON access_log FOR INSERT TO ledger_api
+  WITH CHECK (app_role() = 'system' AND actor_role = 'system');

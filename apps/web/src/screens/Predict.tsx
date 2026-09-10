@@ -30,6 +30,7 @@ import { newId, nowIso } from '@/ids';
 import { requestSync } from '@/sync';
 import { Button, Choice, Divider, Field, H2, P, Scale, Screen, Small } from '@/ui';
 import { CrisisCard } from '@/ui/CrisisCard';
+import { recordUsage } from '@/usage';
 
 export default function Predict() {
   const navigate = useNavigate();
@@ -111,6 +112,7 @@ export default function Predict() {
       await putBodyState({ id: newId(), predictionId: p.id, phase: 'before', before, createdAt: now, clientUpdatedAt: now });
     }
     requestSync();
+    void recordUsage('prediction_created');
     if (gate.risk.matched) {
       setCrisis(gate);
       return;

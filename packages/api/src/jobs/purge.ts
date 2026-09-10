@@ -142,6 +142,12 @@ export async function purgeDeleted(): Promise<PurgeResult> {
         // missed the day that changes.
         baaAcceptedVersion: null,
         baaAcceptedAt: null,
+        // Research consent goes too. The account is gone; a consent record
+        // for a person who no longer exists is a claim nobody can act on, and
+        // the export reads live consent rather than history anyway.
+        researchConsentAt: null,
+        researchConsentWithdrawnAt: null,
+        researchConsentVersion: null,
       })
       .where(inArray(schema.users.id, ids));
     const users = u.rowCount ?? 0;

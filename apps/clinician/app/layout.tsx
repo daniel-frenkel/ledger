@@ -66,6 +66,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <Link href="/library/protocols">Protocols</Link>
             <Link href="/formulate">Formulate</Link>
             <Link href="/invites">Invite</Link>
+            <Link href="/client">Client</Link>
             <Link href="/stack">Stack</Link>
             <Link href="/setup">Set up</Link>
           </nav>

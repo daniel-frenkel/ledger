@@ -11,7 +11,7 @@
 import { syncPullSchema, type SyncPush } from '@ledger/shared';
 import { API_URL, accessToken } from '@/auth/supabase';
 import { APP_VERSION } from '@/version';
-import { clearUsage, pendingUsage } from '@/usage';
+import { clearUsage, pendingUsage, recordUsage } from '@/usage';
 import {
   clearOutbox,
   forcePutReinterpretation,
@@ -122,6 +122,7 @@ async function run(): Promise<void> {
     // Usage events are fire-and-forget: the push succeeded, so drop exactly
     // the ones that went, by id, in case another was recorded in flight.
     await clearUsage(usage);
+    void recordUsage('sync_completed');
 
     // Merge pulled rows. Anything still queued locally is newer than what the
     // server has (or is about to be re-pushed), so leave it alone; every

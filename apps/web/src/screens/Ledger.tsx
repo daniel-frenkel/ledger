@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react';
 import { FRAMING, discountSentence, summarizeLedger, type LedgerSummary } from '@ledger/shared';
 import { allBodyStates, allPredictions, allPriors, allReinterpretations } from '@/db';
+import { recordUsage } from '@/usage';
 import { Card, H1, H2, P, Screen, Small } from '@/ui';
 
 export default function Ledger() {
@@ -20,6 +21,7 @@ export default function Ledger() {
         allBodyStates(),
       ]);
       if (live) setS(summarizeLedger({ predictions, priors, reinterpretations, bodyStates }));
+      void recordUsage('ledger_viewed');
     })();
     return () => {
       live = false;
