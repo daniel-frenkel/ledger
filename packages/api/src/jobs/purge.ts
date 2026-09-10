@@ -25,6 +25,10 @@
  * prediction they removed — is not purged here yet; see docs/data-path.md,
  * where the rule for those is decided and queued.
  *
+ * Not everything of a purged client's goes. A measure taken under a clinician
+ * link is part of that clinician's care record, as a formulation is, and stays
+ * behind pointing at the tombstone.
+ *
  * **The users row is never deleted.** `formulations` and `assistant_runs` are
  * the clinician's record of their own clinical reasoning, and both cascade
  * from users — deleting the row would take them silently. So the row is
@@ -32,7 +36,7 @@
  * nothing else on it says anything about the person.
  */
 import cron from 'node-cron';
-import { inArray, or, sql } from 'drizzle-orm';
+import { and, inArray, isNull, or, sql } from 'drizzle-orm';
 import { config } from '../config.js';
 import { schema, withSystem } from '../db/client.js';
 import { logger } from '../logging/logger.js';
@@ -98,6 +102,17 @@ export async function purgeDeleted(): Promise<PurgeResult> {
       if (n > 0) removed[name] = n;
       total += n;
     }
+
+    // Measures split by whether a clinician was ever involved. One taken under
+    // a link is part of the care record and stays with the clinician who took
+    // it, like a formulation; one with no link is the client's own data. 0009
+    // draws the line, and the RLS policy draws it again so a wrong `where`
+    // here cannot take a care record with it.
+    const m = await tx
+      .delete(schema.measures)
+      .where(and(inArray(schema.measures.clientId, ids), isNull(schema.measures.linkId)));
+    if ((m.rowCount ?? 0) > 0) removed['measures'] = m.rowCount ?? 0;
+    total += m.rowCount ?? 0;
 
     // A consumed invite is a token hash and two timestamps, not a clinical
     // record, and it names the person who redeemed it. It goes.

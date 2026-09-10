@@ -49,6 +49,13 @@ export const DELETION_UNAVAILABLE =
  * button. 0007 already refuses to hard-delete any user row; this refuses to
  * start the soft delete for the one case where it would be wrong.
  */
+/**
+ * The research consent text this build shows. Its own version, separate from
+ * the BAA's: the two documents change for different reasons and asking someone
+ * to re-consent to research because a contract changed would be wrong.
+ */
+export const CONSENT_VERSION = 'draft-2026-09-10';
+
 export const CLINICIAN_DELETION_CODE = 'CLINICIAN_DELETION_UNSUPPORTED';
 export const CLINICIAN_DELETION =
   'Clinician accounts are not deleted from here. Your formulations are part of a client record. Get in touch and we will work out what happens to them.';
@@ -107,6 +114,47 @@ const me: FastifyPluginAsync = async (app) => {
     return reply.status(200).send({ version: body.data.version });
   });
 
+  /**
+   * Research consent — proposal 03 §4.
+   *
+   * Separate from clinician sharing in every way: a different screen, a
+   * different flag, and withdrawing one does not touch the other. Withdrawal
+   * sets the withdrawn timestamp and leaves the consent timestamp as history,
+   * because the fact that someone consented on a date does not stop being true.
+   *
+   * The clinician has no route to these columns and no grant on them. Consent
+   * a clinician could set, or even see, is not consent — it is a thing to be
+   * asked about in a session where one person holds the power.
+   */
+  app.put('/v1/me/research-consent', { config: perUser(20, '1 hour') }, async (request, reply) => {
+    const body = z
+      .object({ consented: z.boolean(), version: z.string().min(1).max(64).optional() })
+      .safeParse(request.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: 'invalid payload', fields: body.error.issues.map((i) => i.path.join('.')) });
+    }
+    if (request.user.role !== 'client') {
+      return reply.status(403).send({ error: 'research consent is the client’s own' });
+    }
+
+    const now = new Date();
+    await withUser(request.user, (tx) =>
+      tx
+        .update(schema.users)
+        .set(
+          body.data.consented
+            ? {
+                researchConsentAt: now,
+                researchConsentVersion: body.data.version ?? CONSENT_VERSION,
+                researchConsentWithdrawnAt: null,
+              }
+            : { researchConsentWithdrawnAt: now },
+        )
+        .where(eq(schema.users.id, request.user.id)),
+    );
+    return reply.status(200).send({ consented: body.data.consented });
+  });
+
   /** What this build is asking for, and whether this user has accepted it. */
   app.get('/v1/me', async (request, reply) => {
     let current: string | null = null;
@@ -117,11 +165,30 @@ const me: FastifyPluginAsync = async (app) => {
       // still true, and the setup screen can say the document is missing.
       current = null;
     }
+    // Research consent is read back for the client's own Settings screen. It
+    // is on /v1/me and nowhere a clinician can reach.
+    const me = await withUser(request.user, async (tx) => {
+      const [row] = await tx
+        .select({
+          consentAt: schema.users.researchConsentAt,
+          withdrawnAt: schema.users.researchConsentWithdrawnAt,
+          version: schema.users.researchConsentVersion,
+        })
+        .from(schema.users)
+        .where(eq(schema.users.id, request.user.id));
+      return row ?? null;
+    });
+
     return reply.send({
       id: request.user.id,
       role: request.user.role,
       mfa: request.user.aal === 'aal2',
       baa: { current, accepted: request.user.baaAcceptedVersion },
+      research: {
+        current: CONSENT_VERSION,
+        consented: !!me?.consentAt && !me.withdrawnAt,
+        version: me?.version ?? null,
+      },
     });
   });
 

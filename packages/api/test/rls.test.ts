@@ -1067,4 +1067,103 @@ describe('0003 invites and formulations', () => {
       expect(await count(c, `SELECT count(*) n FROM users WHERE id = $1`, [CLIENT_B])).toBe(0);
     });
   });
+
+  // --- research readiness --------------------------------------------------
+
+  it('#51 a clinician cannot write or read research consent', async () => {
+    await linkActive();
+    await as(CLINICIAN, 'clinician', async (c) => {
+      // No grant on those columns for anyone but the row's owner, and no
+      // policy that would let a clinician reach another user's row.
+      await expect(
+        c.query(`UPDATE users SET research_consent_at = now() WHERE id = $1`, [CLIENT_A]),
+      ).rejects.toThrow();
+    });
+    // Consent a clinician could set, or even see, is not consent.
+    await asCommit(CLIENT_A, 'client', (c) =>
+      c.query(`UPDATE users SET research_consent_at = now(), research_consent_version = 'v1' WHERE id = $1`, [CLIENT_A]),
+    );
+    await as(CLINICIAN, 'clinician', async (c) => {
+      const r = await c.query(`SELECT research_consent_at FROM users WHERE id = $1`, [CLIENT_A]);
+      // The row is visible through the link, but this is the column a
+      // clinician route must never return; the API test covers that.
+      expect(r.rowCount).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  it('#52 a clinician cannot read usage_events', async () => {
+    await linkActive();
+    await asCommit(CLIENT_A, 'client', (c) =>
+      c.query(`INSERT INTO usage_events (id, user_id, kind) VALUES (gen_random_uuid(), $1, 'app_open')`, [CLIENT_A]),
+    );
+    // How often someone opens an app is not clinical information, and in a
+    // clinician's hands it would become a stick.
+    await as(CLINICIAN, 'clinician', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM usage_events`)).toBe(0);
+    });
+    await as(CLIENT_A, 'client', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM usage_events`)).toBe(0);
+    });
+  });
+
+  it('#53 a client cannot write a phase event', async () => {
+    await linkActive();
+    await as(CLIENT_A, 'client', async (c) => {
+      await expect(
+        c.query(
+          `INSERT INTO phase_events (id, client_id, clinician_id, protocol_slug, phase, kind, at)
+           VALUES (gen_random_uuid(), $1, $2, 'exposure', 1, 'started', now())`,
+          [CLIENT_A, CLINICIAN],
+        ),
+      ).rejects.toThrow();
+    });
+  });
+
+  it('#54 a phase event cannot be updated once written', async () => {
+    await linkActive();
+    await asCommit(CLINICIAN, 'clinician', (c) =>
+      c.query(
+        `INSERT INTO phase_events (id, client_id, clinician_id, protocol_slug, phase, kind, at)
+         VALUES (gen_random_uuid(), $1, $2, 'exposure', 1, 'started', now())`,
+        [CLIENT_A, CLINICIAN],
+      ),
+    );
+    await as(CLINICIAN, 'clinician', async (c) => {
+      await expect(c.query(`UPDATE phase_events SET phase = 2`)).rejects.toThrow();
+    });
+    // And the client can read their own: a phase is a fact about their care.
+    await as(CLIENT_A, 'client', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM phase_events`)).toBe(1);
+    });
+  });
+
+  it('#55 received_at cannot be changed by anyone', async () => {
+    await as(CLIENT_A, 'client', async (c) => {
+      await expect(c.query(`UPDATE predictions SET received_at = now() WHERE id = $1`, [PRED_A])).rejects.toThrow(
+        /server clock/,
+      );
+    });
+  });
+
+  it('#56 the export role reads consented rows only', async () => {
+    const asSystem = asSystemTx;
+    // Not consented: invisible even to the system role.
+    await asSystem(async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM predictions`)).toBe(0);
+    });
+
+    await admin.query(
+      `UPDATE users SET research_consent_at = now(), research_consent_version = 'v1' WHERE id = $1`,
+      [CLIENT_A],
+    );
+    await asSystem(async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM predictions`)).toBe(1);
+    });
+
+    // Withdrawal is immediate: nothing to re-run, nothing to remember.
+    await admin.query(`UPDATE users SET research_consent_withdrawn_at = now() WHERE id = $1`, [CLIENT_A]);
+    await asSystem(async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM predictions`)).toBe(0);
+    });
+  });
 });

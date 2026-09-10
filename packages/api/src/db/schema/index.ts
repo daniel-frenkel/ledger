@@ -68,6 +68,13 @@ const syncColumns = {
   clientUpdatedAt: ts('client_updated_at').notNull(),
   updatedAt: ts('updated_at').notNull().defaultNow(),
   deletedAt: ts('deleted_at'),
+  /**
+   * Provenance, from 0009. `created_at` and `client_updated_at` are the
+   * client's clock; `received_at` is the server's, set once and immutable by
+   * trigger. The pair is the evidence a prediction existed before its outcome.
+   */
+  appVersion: text('app_version'),
+  receivedAt: ts('received_at').notNull().defaultNow(),
 };
 
 // ---------------------------------------------------------------------------
@@ -101,6 +108,14 @@ export const users = pgTable('users', {
   /** Which version of the clinician BAA was accepted, and when. Added in 0008. */
   baaAcceptedVersion: text('baa_accepted_version'),
   baaAcceptedAt: ts('baa_accepted_at'),
+  /**
+   * Research consent, from 0009. Separate from clinician sharing in every way.
+   * Withdrawal sets the withdrawn timestamp and leaves the consent timestamp
+   * as history — that someone consented on a date does not stop being true.
+   */
+  researchConsentAt: ts('research_consent_at'),
+  researchConsentWithdrawnAt: ts('research_consent_withdrawn_at'),
+  researchConsentVersion: text('research_consent_version'),
   createdAt: ts('created_at').notNull().defaultNow(),
   deletedAt: ts('deleted_at'),
 });
@@ -515,6 +530,8 @@ export const formulations = pgTable(
      * tier. Null for rows written before the gate existed. Added in 0005.
      */
     outsideStack: boolean('outside_stack'),
+    appVersion: text('app_version'),
+    receivedAt: ts('received_at').notNull().defaultNow(),
     createdAt: ts('created_at').notNull().defaultNow(),
     deletedAt: ts('deleted_at'),
   },
@@ -617,6 +634,14 @@ export const measures = pgTable(
     subscales: jsonb('subscales'),
     administeredAt: ts('administered_at').notNull(),
     administeredBy: text('administered_by').notNull(),
+    /**
+     * The link it was taken under, from 0009. With one, it is part of the care
+     * record and survives the client's purge the way a formulation does;
+     * without one, it is the client's own data and goes with the account.
+     */
+    linkId: uuid('link_id').references(() => clinicianClientLinks.id, { onDelete: 'cascade' }),
+    appVersion: text('app_version'),
+    receivedAt: ts('received_at').notNull().defaultNow(),
     createdAt: ts('created_at').notNull().defaultNow(),
   },
   (t) => [
@@ -633,6 +658,7 @@ export const measures = pgTable(
         OR (${t.administeredBy} = 'client' AND ${t.clinicianId} IS NULL)`,
     ),
     check('measures_not_self', sql`${t.clinicianId} IS NULL OR ${t.clinicianId} <> ${t.clientId}`),
+    check('measures_clinician_has_link', sql`${t.administeredBy} = 'client' OR ${t.linkId} IS NOT NULL`),
   ],
 );
 
@@ -669,6 +695,85 @@ export const accessLog = pgTable(
   ],
 );
 
+export const phaseKind = pgEnum('phase_kind', ['started', 'completed', 'paused', 'abandoned']);
+export const usageKind = pgEnum('usage_kind', [
+  'app_open',
+  'prediction_created',
+  'prediction_resolved',
+  'ledger_viewed',
+  'sync_completed',
+  'crisis_card_shown',
+  'settings_opened',
+]);
+
+/**
+ * The vertical line on a multiple-baseline graph. Append-only,
+ * clinician-written, and no note column: this says when a phase started, not
+ * how it went.
+ */
+export const phaseEvents = pgTable(
+  'phase_events',
+  {
+    id: uuid('id').primaryKey(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    clinicianId: uuid('clinician_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    formulationId: uuid('formulation_id').references(() => formulations.id, { onDelete: 'set null' }),
+    protocolSlug: text('protocol_slug').notNull(),
+    phase: smallint('phase').notNull(),
+    kind: phaseKind('kind').notNull(),
+    /** The clinician's date, not the server's. Backdating is bounded by a CHECK. */
+    at: ts('at').notNull(),
+    appVersion: text('app_version'),
+    receivedAt: ts('received_at').notNull().defaultNow(),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('phase_events_client_at_idx').on(t.clientId, t.at),
+    check('phase_events_phase_range', sql`${t.phase} BETWEEN 0 AND 20`),
+    check('phase_events_slug_shape', sql`${t.protocolSlug} ~ '^[a-z0-9-]{1,64}$'`),
+    check('phase_events_not_self', sql`${t.clinicianId} <> ${t.clientId}`),
+  ],
+);
+
+/**
+ * Five columns and no sixth. No payload, no entity id, no text of any kind:
+ * this answers "did they open the app" and must never become able to answer
+ * "and what did they write". test/research.test.ts asserts the column list.
+ */
+export const usageEvents = pgTable(
+  'usage_events',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: usageKind('kind').notNull(),
+    appVersion: text('app_version'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('usage_events_user_created_idx').on(t.userId, t.createdAt)],
+);
+
+/** What left, and when. Nothing about who: that would defeat the pseudonyms. */
+export const exports_ = pgTable(
+  'exports',
+  {
+    id: uuid('id').primaryKey(),
+    at: ts('at').notNull().defaultNow(),
+    participantCount: integer('participant_count').notNull(),
+    allowlistSha256: bytea('allowlist_sha256').notNull(),
+    dryRun: boolean('dry_run').notNull().default(false),
+  },
+  (t) => [
+    check('exports_allowlist_sha256_len', sql`octet_length(${t.allowlistSha256}) = 32`),
+    check('exports_participant_count_sane', sql`${t.participantCount} >= 0`),
+  ],
+);
+
 export type LinkRow = typeof clinicianClientLinks.$inferSelect;
 export type DeviceRow = typeof devices.$inferSelect;
 export type LinkInviteRow = typeof linkInvites.$inferSelect;
@@ -678,3 +783,5 @@ export type ClinicianStackRow = typeof clinicianStacks.$inferSelect;
 export type StackGoalRow = typeof stackGoals.$inferSelect;
 export type MeasureRow = typeof measures.$inferSelect;
 export type AccessLogRow = typeof accessLog.$inferSelect;
+export type PhaseEventRow = typeof phaseEvents.$inferSelect;
+export type UsageEventRow = typeof usageEvents.$inferSelect;

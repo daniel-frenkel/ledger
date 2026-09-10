@@ -291,8 +291,39 @@ export type ClinicianClientLink = z.infer<typeof linkSchema>;
 // Sync envelope — what the phone sends and receives
 // ---------------------------------------------------------------------------
 
+/**
+ * What the client did, with no payload and no entity id — proposal 03 §5.
+ * Seven kinds and nothing else; the table has five columns and a test that
+ * says so.
+ */
+export const USAGE_KINDS = [
+  'app_open',
+  'prediction_created',
+  'prediction_resolved',
+  'ledger_viewed',
+  'sync_completed',
+  'crisis_card_shown',
+  'settings_opened',
+] as const;
+export type UsageKind = (typeof USAGE_KINDS)[number];
+
+export const usageEventSchema = z.object({
+  id: uuid,
+  kind: z.enum(USAGE_KINDS),
+  createdAt: isoDate,
+});
+export type UsageEvent = z.infer<typeof usageEventSchema>;
+
 export const syncPushSchema = z.object({
   deviceId: uuid,
+  /**
+   * The build that wrote these rows. Stamped onto everything this push
+   * creates, so a result is reproducible against a version of the calibration
+   * functions rather than against "the app".
+   */
+  appVersion: z.string().max(64).nullable().optional(),
+  /** Fire-and-forget; they ride the same outbox as everything else. */
+  usageEvents: z.array(usageEventSchema).max(200).default([]),
   predictions: z.array(predictionSchema).max(500).default([]),
   bodyStates: z.array(bodyStateSchema).max(1000).default([]),
   reinterpretations: z.array(reinterpretationSchema).max(500).default([]),
