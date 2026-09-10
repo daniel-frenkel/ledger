@@ -73,6 +73,37 @@ CREATE POLICY journal_entries_system_purge ON journal_entries FOR DELETE TO ledg
   USING (app_purgeable(deleted_at));
 
 -- ---------------------------------------------------------------------------
+-- And the matching SELECT, which is not optional.
+--
+-- A DELETE whose WHERE clause reads a column needs SELECT permission and has
+-- SELECT policies applied to it as well. Every SELECT policy in 0001 keys on
+-- app_user_id(), and the system context has no user id — so without these the
+-- purge job can see nothing, and therefore deletes nothing, silently.
+--
+-- The predicate is the same one, deliberately: the system role can read
+-- exactly the rows it can delete, and no others. A live row stays invisible to
+-- it, which is what keeps a bug in the job from becoming a cross-user read.
+-- ---------------------------------------------------------------------------
+--> statement-breakpoint
+CREATE POLICY users_system_purge_read ON users FOR SELECT TO ledger_api
+  USING (app_purgeable(deleted_at));
+--> statement-breakpoint
+CREATE POLICY predictions_system_purge_read ON predictions FOR SELECT TO ledger_api
+  USING (app_purgeable(deleted_at));
+--> statement-breakpoint
+CREATE POLICY priors_system_purge_read ON priors FOR SELECT TO ledger_api
+  USING (app_purgeable(deleted_at));
+--> statement-breakpoint
+CREATE POLICY body_states_system_purge_read ON body_states FOR SELECT TO ledger_api
+  USING (app_purgeable(deleted_at));
+--> statement-breakpoint
+CREATE POLICY reinterpretations_system_purge_read ON reinterpretations FOR SELECT TO ledger_api
+  USING (app_purgeable(deleted_at));
+--> statement-breakpoint
+CREATE POLICY journal_entries_system_purge_read ON journal_entries FOR SELECT TO ledger_api
+  USING (app_purgeable(deleted_at));
+
+-- ---------------------------------------------------------------------------
 -- The tables with no deleted_at of their own.
 --
 -- crisis_events, devices, prediction_priors and clinician_client_links have no

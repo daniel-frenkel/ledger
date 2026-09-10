@@ -996,17 +996,44 @@ describe('0003 invites and formulations', () => {
     });
   });
 
-  it('#48 the system role can read nothing, because it is nobody', async () => {
-    // Every SELECT policy keys on app_user_id(), and there is no user id set.
-    // A bug in the purge job cannot turn into a cross-user read.
-    await api.query('BEGIN');
-    try {
-      await api.query(`SELECT set_config('request.role', 'system', true), set_config('request.user_id', '', true)`);
-      for (const t of ['predictions', 'priors', 'journal_entries', 'body_states', 'reinterpretations']) {
-        expect(await count(api, `SELECT count(*) n FROM ${t}`), t).toBe(0);
+  it('#48 the system role reads only what it may purge, and nothing else', async () => {
+    // It needs to read: a DELETE whose WHERE touches a column has SELECT
+    // policies applied to it too, so a system role that could read nothing
+    // would delete nothing. The predicate is the same one, so what it can see
+    // is exactly what it can destroy — a live row stays invisible to it, and a
+    // bug in the purge job cannot become a cross-user read.
+    const asSystem = async <T,>(fn: (c: pg.Client) => Promise<T>): Promise<T> => {
+      await api.query('BEGIN');
+      try {
+        await api.query(
+          `SELECT set_config('request.role', 'system', true),
+                  set_config('request.user_id', '', true),
+                  set_config('app.deletion_grace_days', '30', true)`,
+        );
+        return await fn(api);
+      } finally {
+        await api.query('ROLLBACK');
       }
-    } finally {
-      await api.query('ROLLBACK');
-    }
+    };
+    const TABLES = ['predictions', 'priors', 'journal_entries', 'body_states', 'reinterpretations'];
+
+    // Live rows: invisible.
+    await asSystem(async (c) => {
+      for (const t of TABLES) expect(await count(c, `SELECT count(*) n FROM ${t}`), t).toBe(0);
+    });
+
+    // Soft-deleted but inside the window: still invisible.
+    await admin.query(`UPDATE predictions SET deleted_at = now() - interval '10 days'`);
+    await asSystem(async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM predictions`)).toBe(0);
+    });
+
+    // Past the window: visible, because it is about to be deleted.
+    await admin.query(`UPDATE predictions SET deleted_at = now() - interval '31 days'`);
+    await asSystem(async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM predictions`)).toBe(1);
+      // And still nothing from a table with no purgeable row in it.
+      expect(await count(c, `SELECT count(*) n FROM journal_entries`)).toBe(0);
+    });
   });
 });
