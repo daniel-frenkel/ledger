@@ -8,33 +8,52 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { USER_ROLES, type UserRole } from '@ledger/shared';
 import { config } from '../config.js';
+import { authAdmin } from '../auth-admin.js';
 import { verifySupabaseJwt } from '../auth/jwt.js';
 import { withUser, schema } from '../db/client.js';
+import type { AssuranceLevel } from '../auth-admin.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
-    user: { id: string; role: UserRole };
+    user: {
+      id: string;
+      role: UserRole;
+      /**
+       * How many factors the token proved. Go-live gate B2 requires aal2 of a
+       * clinician before they can invite anyone or read a client's rows.
+       */
+      aal: AssuranceLevel;
+      /** Which clinician BAA version they accepted, or null. Gate A1. */
+      baaAcceptedVersion: string | null;
+    };
   }
 }
 
 const PUBLIC = new Set(['/health', '/']);
 
-async function identify(request: FastifyRequest): Promise<{ id: string; role: UserRole }> {
+async function identify(request: FastifyRequest): Promise<{ id: string; role: UserRole; aal: AssuranceLevel }> {
   const c = config();
   if (c.AUTH_TEST_MODE) {
     // Tests only. Never enabled in production (config refuses).
     const raw = request.headers['x-test-user'];
     const val = Array.isArray(raw) ? raw[0] : raw;
     if (!val) throw Object.assign(new Error('missing x-test-user'), { statusCode: 401 });
-    const [id, role = 'client'] = val.split(':');
+    // `id:role:aal`. The assurance level defaults to aal2, because a test that
+    // is not about MFA is a test whose clinician has already enrolled — the
+    // MFA tests pass `:aal1` explicitly. In production the default is the
+    // other way: assuranceLevel() reads the claim and fails closed to aal1.
+    const [id, role = 'client', aal = 'aal2'] = val.split(':');
     if (!id || !(USER_ROLES as readonly string[]).includes(role)) throw Object.assign(new Error('bad x-test-user'), { statusCode: 401 });
-    return { id, role: role as UserRole };
+    if (aal !== 'aal1' && aal !== 'aal2') throw Object.assign(new Error('bad x-test-user'), { statusCode: 401 });
+    return { id, role: role as UserRole, aal };
   }
   const auth = request.headers.authorization;
   if (!auth?.startsWith('Bearer ')) throw Object.assign(new Error('missing bearer token'), { statusCode: 401 });
   try {
     const v = await verifySupabaseJwt(auth.slice(7));
-    return { id: v.userId, role: v.role };
+    // Behind the seam: the claim's name is the provider's, and Prompt 11
+    // changes the provider without changing the checks that read this.
+    return { id: v.userId, role: v.role, aal: authAdmin().assuranceLevel(v.claims) };
   } catch {
     throw Object.assign(new Error('invalid token'), { statusCode: 401 });
   }
@@ -45,14 +64,18 @@ const authPlugin: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', async (request) => {
     if (PUBLIC.has(request.url.split('?')[0] ?? '')) return;
     const ident = await identify(request);
-    // Ensure the users row exists; the DB role wins.
-    const role = await withUser(ident, async (tx) => {
-      const existing = await tx.select({ role: schema.users.role }).from(schema.users).where(eq(schema.users.id, ident.id));
-      if (existing[0]) return existing[0].role;
+    // Ensure the users row exists; the DB role wins. The BAA version comes
+    // from the same read rather than a second one per guarded route.
+    const row = await withUser(ident, async (tx) => {
+      const existing = await tx
+        .select({ role: schema.users.role, baa: schema.users.baaAcceptedVersion })
+        .from(schema.users)
+        .where(eq(schema.users.id, ident.id));
+      if (existing[0]) return existing[0];
       await tx.insert(schema.users).values({ id: ident.id, role: ident.role }).onConflictDoNothing();
-      return ident.role;
+      return { role: ident.role, baa: null };
     });
-    request.user = { id: ident.id, role };
+    request.user = { id: ident.id, role: row.role, aal: ident.aal, baaAcceptedVersion: row.baa };
   });
 };
 

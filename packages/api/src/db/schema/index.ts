@@ -98,6 +98,9 @@ export const users = pgTable('users', {
   id: uuid('id').primaryKey(),
   role: userRole('role').notNull().default('client'),
   timezone: text('timezone').notNull().default('America/Los_Angeles'),
+  /** Which version of the clinician BAA was accepted, and when. Added in 0008. */
+  baaAcceptedVersion: text('baa_accepted_version'),
+  baaAcceptedAt: ts('baa_accepted_at'),
   createdAt: ts('created_at').notNull().defaultNow(),
   deletedAt: ts('deleted_at'),
 });
@@ -633,6 +636,39 @@ export const measures = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// access_log — who read whose rows, and when
+//
+// Go-live gate B1. No content column, ever: the value of this table is that it
+// can be kept for six years without becoming a second copy of the ledger.
+// test/audit.test.ts asserts the column list.
+//
+// No foreign keys to users. It outlives the accounts it names — six years of
+// retention against thirty days to deletion — and an audit record that
+// disappears with its subject is not an audit record.
+// ---------------------------------------------------------------------------
+export const accessLog = pgTable(
+  'access_log',
+  {
+    id: uuid('id').primaryKey(),
+    actorId: uuid('actor_id').notNull(),
+    actorRole: text('actor_role').notNull(),
+    /** Whose rows. Null when the read is not about one client, e.g. a cohort export. */
+    clientId: uuid('client_id'),
+    tableName: text('table_name').notNull(),
+    action: text('action').notNull(),
+    rowCount: integer('row_count').notNull(),
+    at: ts('at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('access_log_client_at_idx').on(t.clientId, t.at),
+    index('access_log_actor_at_idx').on(t.actorId, t.at),
+    check('access_log_action_known', sql`${t.action} IN ('read','export')`),
+    check('access_log_row_count_sane', sql`${t.rowCount} >= 0`),
+    check('access_log_actor_role_known', sql`${t.actorRole} IN ('client','clinician','system')`),
+  ],
+);
+
 export type LinkRow = typeof clinicianClientLinks.$inferSelect;
 export type DeviceRow = typeof devices.$inferSelect;
 export type LinkInviteRow = typeof linkInvites.$inferSelect;
@@ -641,3 +677,4 @@ export type AssistantRunRow = typeof assistantRuns.$inferSelect;
 export type ClinicianStackRow = typeof clinicianStacks.$inferSelect;
 export type StackGoalRow = typeof stackGoals.$inferSelect;
 export type MeasureRow = typeof measures.$inferSelect;
+export type AccessLogRow = typeof accessLog.$inferSelect;

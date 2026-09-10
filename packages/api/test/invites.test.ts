@@ -18,6 +18,7 @@ import { GATE_NAMES } from '../src/routes/formulations.js';
 import { OBSERVATION_IDS } from '@ledger/shared';
 import {
   ADMIN_URL,
+  acceptBaa,
   CLIENT_A,
   CLIENT_B,
   CLINICIAN,
@@ -57,6 +58,7 @@ beforeEach(async () => {
     CLINICIAN,
     CLINICIAN_B,
   ]);
+  await acceptBaa([CLINICIAN, CLINICIAN_B]);
 });
 
 afterEach(async () => {

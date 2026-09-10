@@ -46,6 +46,7 @@ Identity (email, display name, phone) is **never** stored in the application dat
 | `formulations` | **none in this version** | own rows, for a client they hold an active link to |
 | `assistant_runs` | none | own rows, for a client they hold an active link to |
 | `clinician_stacks`, `stack_goals` | none — not even their own clinician's | own rows only; not PHI, and deliberately not a directory |
+| `access_log` | none | none — the system role only |
 | `measures` | own rows, full — including ones a clinician administered | rows for a client they hold an active link to; writes only as themselves |
 
 `predictions.counts_for` is a structured number — an integer 0–100 answering "How much does this one count?" — and carries no prose, so it is included in `predictions_summary`, the view a clinician with `share_predictions = false` can read. Same reasoning as confidence and the verdict: a number scoped to a `user_id` is handled as PHI, and it is still not something a person typed.
@@ -63,6 +64,26 @@ Three decisions in that table are deliberate and worth stating plainly.
 **There is no directory.** No table maps a clinician to a list of clients they might invite, and no endpoint searches for a person. `clinician_stacks` — the training stack that feeds the scope gate — is the nearest thing to one and is deliberately not it: a clinician reads only their own rows, no client can read any, and there is no policy that would let a search across clinicians be written without adding one. A link exists only because a clinician created an invite and a client redeemed it. This is why the clinician's client picker shows a truncated UUID: there is no name in the application database to show, by design — identity lives in Supabase Auth and nothing joins the two.
 
 **The client outlives the clinician.** Every client-owned row is owned by the client, not by the link. Revoking a link, or deleting the clinician's account, removes the clinician's read access and leaves the client's ledger untouched and fully theirs. Formulations and assistant runs are the mirror case: they belong to the clinician who wrote them, cascade with the clinician, and are already invisible once the link is not active.
+
+## Who did read — the access log
+
+RLS decides who *can* read a client's rows; `access_log` records who *did*. Go-live gate B1. A line is written inside `withUser`, on the same transaction as the read it describes, so a read that rolls back leaves no claim that it happened and a read that commits cannot commit without its line. Zero-row reads are logged too: "I looked and there was nothing" is a fact about who went looking, and dropping it would make an empty result the one way to read unobserved.
+
+The columns are `id, actor_id, actor_role, client_id, table_name, action, row_count, at` and **there is no content column and will not be one** — the value of this table is that it can be kept for six years without becoming a second copy of the ledger. A test asserts the column list, so a column that could hold prose fails there rather than in review. `table_name` rather than the gate's `table`, which is reserved in SQL.
+
+It is append-only with no `UPDATE` or `DELETE` grant and a trigger behind that, and it has **no foreign keys to `users`**: retention is six years against thirty days to deletion, and an audit record that disappears with its subject is not an audit record. Only the system role reads it — not the clinician who wrote the lines, and not yet the client the lines are about. A client asking "who has looked at my record" is a right worth building and is a request with a person on the other end, not a `SELECT`.
+
+Wired today to the two clinician reads that exist: `GET /v1/clients/:id/formulations` and `GET /v1/clients/:id/measures`. The gate also names `predictions`, `predictions_summary`, `priors`, `body_states`, `reinterpretations`, `phase_events` and the research export — those routes are Prompt 3 and Prompt 8 and do not exist yet. `logAccess()` is the one place a read is recorded, so adding them is a line at each call site, not a mechanism.
+
+## Two things a clinician must have first
+
+**A second factor (gate B2).** Email OTP is one, and one is not enough for an account that can read other people's clinical records. The API refuses `POST /v1/invites`, every clinician read of client data, and writing a formulation unless the token proves `aal2`. Clients stay on one factor by design — the asymmetry is deliberate: a clinician holds many people's records, a client holds their own.
+
+The level is read through the auth seam, `AuthAdmin.assuranceLevel()`, not from a provider claim in the route. The claim's name and shape belong to the provider; go-live gate A2 moves production to Identity Platform, and the requirement should survive that without the check that enforces it being rewritten. Enrollment itself is Supabase-specific for now and knowingly so.
+
+**An accepted BAA (gate A1).** Under HIPAA the vendor is a business associate of every clinician who uses this with a client, and the agreement has to exist before the first invite rather than after the first incident. Acceptance is recorded on the clinician's own row as `baa_accepted_version` and `baa_accepted_at`, writable by that user for that row and by nothing else — 0008 grants `UPDATE` on exactly those two columns and 0001's `users_self_update` scopes it. `POST /v1/invites` refuses while the version is null. The document is `docs/legal/clinician-baa.md`, currently a placeholder marked DRAFT with a header saying nobody should accept it; it is in `docs/legal/` rather than `docs/theory/` so the Library pipeline never sees it and the reference assistant can never quote it.
+
+Both failures return a code — `MFA_REQUIRED`, `BAA_REQUIRED` — and a sentence the clinician can act on. The failure here is almost always "you have not done this yet", not "you are not allowed".
 
 ## Deletion
 
@@ -86,6 +107,10 @@ The order is rows-then-identity, because the reverse cannot be finished: with th
 **The `users` row is never hard-deleted. It becomes a tombstone.** Two things pointing at a client's user row are not the client's data: `formulations` and `assistant_runs` are the clinician's record of their own clinical reasoning, and both foreign-key to `users` with `ON DELETE CASCADE` — a hard delete would take them *silently*, not fail on a constraint. So the row survives with its `id` and its `deleted_at`, `timezone` neutralised to `UTC` (it is `NOT NULL`, and a real zone is a coarse location), and nothing else on it that says anything about the person. There is no `DELETE` grant on `users` and no `DELETE` policy, which is the strongest form of "never": the verb is absent rather than restricted. The test asserts the full column list of `users`, so a column added later fails until someone decides whether it belongs on a tombstone.
 
 `clinician_client_links` is exempt for the same reason at one remove: `formulations.link_id` is `NOT NULL` and cascades from it, so deleting a link deletes the formulations written against it. The link stays, revoked — which is what makes it inert.
+
+**A clinician does not delete their account from here.** `DELETE /v1/me` refuses one with 403 `CLINICIAN_DELETION_UNSUPPORTED`. Their formulations and assistant runs are a record of their own clinical reasoning, referenced by clients who did not write them and cannot consent to their removal; winding down a practice is a conversation about retention, supervision and where the charts go, not a button.
+
+**Measures split by whether a link existed** — decided, not built. A measure taken under an active clinician link is part of the care record and survives a client purge the way a formulation does; one with no link is the client's own data and purges with the account. The line gets drawn in Prompt 8, when measures get their full write path; today `measures.client_id` cascades from `users`, and since the users row is never deleted, nothing is destroyed either way.
 
 **The unit is the account, not the row.** A single entry a client deleted on their own is not purged by this job yet. **Decided, not built:** those follow the same rule — the same 30-day grace, the same nightly job, children before parents — and are queued as their own change rather than folded in here, because doing it row by row means a parent can be purgeable while its children are still live and the order has to be worked out rather than assumed.
 

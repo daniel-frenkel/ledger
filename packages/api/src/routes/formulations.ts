@@ -22,6 +22,8 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { GATE_KEYS, allGatesCleared, gatesSchema, uuid, unknownObservationIds } from '@ledger/shared';
 import { schema, withUser } from '../db/client.js';
+import { clinicianReady } from '../clinician-gate.js';
+import { logAccess } from '../audit.js';
 import { decryptField, encryptField } from '../crypto/fields.js';
 import { newId } from '../ids.js';
 
@@ -64,7 +66,7 @@ const bodySchema = z.object({
 
 const formulations: FastifyPluginAsync = async (app) => {
   app.post('/v1/formulations', { config: { rateLimit: { max: 60, timeWindow: '1 hour' } } }, async (request, reply) => {
-    if (request.user.role !== 'clinician') return reply.status(403).send({ error: 'clinicians write formulations' });
+    if (!clinicianReady(request, reply)) return reply;
     const body = bodySchema.safeParse(request.body);
     // Field names only — a zod message can quote the value it rejected, and
     // the note is in this payload.
@@ -143,17 +145,24 @@ const formulations: FastifyPluginAsync = async (app) => {
   app.get('/v1/clients/:clientId/formulations', async (request, reply) => {
     const params = z.object({ clientId: uuid }).safeParse(request.params);
     if (!params.success) return reply.status(400).send({ error: 'invalid id' });
-    if (request.user.role !== 'clinician') return reply.status(403).send({ error: 'clinicians read formulations' });
+    if (!clinicianReady(request, reply)) return reply;
 
     // RLS does the scoping: author, and an active link. A revoked link returns
     // an empty list rather than a 403 — the rows are simply not visible.
-    const rows = await withUser(request.user, (tx) =>
-      tx
+    //
+    // The audit line is written on the same transaction as the read, so a read
+    // that rolls back leaves no claim that it happened.
+    const rows = await withUser(request.user, async (tx) => {
+      const found = await tx
         .select()
         .from(schema.formulations)
         .where(eq(schema.formulations.clientId, params.data.clientId))
-        .orderBy(desc(schema.formulations.version)),
-    );
+        .orderBy(desc(schema.formulations.version));
+      await logAccess(tx, request.user, [
+        { table: 'formulations', clientId: params.data.clientId, rowCount: found.length },
+      ]);
+      return found;
+    });
 
     return rows.map((r) => ({
       id: r.id,

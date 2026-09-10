@@ -11,6 +11,8 @@ import { config } from '../config.js';
 export interface VerifiedIdentity {
   userId: string;
   role: UserRole;
+  /** The verified payload, for the provider-specific reads behind auth-admin.ts. */
+  claims: JWTPayload;
 }
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | undefined;
@@ -36,5 +38,5 @@ export async function verifySupabaseJwt(token: string): Promise<VerifiedIdentity
     throw new Error('No JWT verification method configured');
   }
   if (!payload.sub) throw new Error('token has no subject');
-  return { userId: payload.sub, role: roleFromClaims(payload) };
+  return { userId: payload.sub, role: roleFromClaims(payload), claims: payload };
 }

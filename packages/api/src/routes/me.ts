@@ -25,6 +25,7 @@
  */
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { and, eq, isNull, or } from 'drizzle-orm';
+import { z } from 'zod';
 import { AuthAdminError, authAdmin, authAdminConfigured } from '../auth-admin.js';
 import { schema, withUser } from '../db/client.js';
 
@@ -36,6 +37,20 @@ const perUser = (max: number, timeWindow: string) => ({
 export const DELETION_UNAVAILABLE_CODE = 'DELETION_UNAVAILABLE';
 export const DELETION_UNAVAILABLE =
   'Account deletion is not available on this deployment. Nothing has been changed.';
+
+/**
+ * A clinician does not delete their account here.
+ *
+ * Their formulations and assistant runs are a record they are keeping about
+ * their own clinical reasoning, referenced by clients who did not write them
+ * and cannot consent to their removal. Winding down a practice is a
+ * conversation about retention, supervision and where the charts go — not a
+ * button. 0007 already refuses to hard-delete any user row; this refuses to
+ * start the soft delete for the one case where it would be wrong.
+ */
+export const CLINICIAN_DELETION_CODE = 'CLINICIAN_DELETION_UNSUPPORTED';
+export const CLINICIAN_DELETION =
+  'Clinician accounts are not deleted from here. Your formulations are part of a client record. Get in touch and we will work out what happens to them.';
 
 /**
  * Every table holding rows the user owns that carries `deleted_at`.
@@ -54,11 +69,60 @@ const OWNED = [
   schema.journalEntries,
 ] as const;
 
+/**
+ * The clinician BAA version this build asks people to accept.
+ *
+ * Read from the frontmatter of docs/legal/clinician-baa.md at build time
+ * would be better; for now it is here and the document says the same thing.
+ * Changing it is what asks every clinician to accept again.
+ */
+export const BAA_VERSION = 'draft-2026-09-10';
+
 const me: FastifyPluginAsync = async (app) => {
+  /**
+   * Accept the business associate agreement — go-live gate A1.
+   *
+   * The user writes their own row and nothing else can: 0008 grants UPDATE on
+   * exactly these two columns, and 0001's users_self_update scopes it to
+   * `id = app_user_id()`. There is no route that accepts on someone's behalf.
+   */
+  app.post('/v1/me/baa', { config: perUser(10, '1 hour') }, async (request, reply) => {
+    const body = z.object({ version: z.string().min(1).max(64) }).safeParse(request.body);
+    if (!body.success) return reply.status(400).send({ error: 'invalid payload', fields: ['version'] });
+    if (body.data.version !== BAA_VERSION) {
+      // Accepting a version this build does not serve would record consent to
+      // a document nobody can produce.
+      return reply.status(409).send({ error: 'that is not the current agreement', current: BAA_VERSION });
+    }
+    if (request.user.role !== 'clinician') {
+      return reply.status(403).send({ error: 'the business associate agreement is between us and a clinician' });
+    }
+
+    await withUser(request.user, (tx) =>
+      tx
+        .update(schema.users)
+        .set({ baaAcceptedVersion: body.data.version, baaAcceptedAt: new Date() })
+        .where(eq(schema.users.id, request.user.id)),
+    );
+    return reply.status(200).send({ version: body.data.version });
+  });
+
+  /** What this build is asking for, and whether this user has accepted it. */
+  app.get('/v1/me', async (request) => ({
+    id: request.user.id,
+    role: request.user.role,
+    mfa: request.user.aal === 'aal2',
+    baa: { current: BAA_VERSION, accepted: request.user.baaAcceptedVersion },
+  }));
+
   app.delete('/v1/me', { config: perUser(5, '1 hour') }, async (request, reply) => {
     // Before anything is written. A deletion that cannot finish must not start.
     if (!authAdminConfigured()) {
       return reply.status(503).send({ code: DELETION_UNAVAILABLE_CODE, error: DELETION_UNAVAILABLE });
+    }
+
+    if (request.user.role === 'clinician') {
+      return reply.status(403).send({ code: CLINICIAN_DELETION_CODE, error: CLINICIAN_DELETION });
     }
 
     const now = new Date();
@@ -74,10 +138,10 @@ const me: FastifyPluginAsync = async (app) => {
         n += r.rowCount ?? 0;
       }
 
-      // Links, both directions. A clinician deleting their account revokes the
-      // links they hold; a client deleting theirs revokes the links to them.
-      // Revoked is immediate and total — every clinician policy joins through
-      // status = 'active'.
+      // The links to them. Only a client reaches this route, so this is the
+      // client's side; revoked is immediate and total, because every clinician
+      // policy joins through status = 'active'. The `or` stays because the
+      // shape of the record is two-sided even when the door is not.
       await tx
         .update(schema.clinicianClientLinks)
         .set({ status: 'revoked' })

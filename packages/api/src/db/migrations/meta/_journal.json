@@ -57,6 +57,13 @@
       "when": 1788797834551,
       "tag": "0007_deletion_system_role",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788797834552,
+      "tag": "0008_audit_mfa_baa",
+      "breakpoints": true
     }
   ]
 }

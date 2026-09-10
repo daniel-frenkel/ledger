@@ -16,6 +16,7 @@ import { DELETION_UNAVAILABLE_CODE } from '../src/routes/me.js';
 import { SCRUBBED_TIMEZONE, purgeDeleted } from '../src/jobs/purge.js';
 import {
   ADMIN_URL,
+  acceptBaa,
   CLIENT_A,
   CLIENT_B,
   CLINICIAN,
@@ -46,7 +47,9 @@ afterAll(async () => {
 beforeEach(async () => {
   deleteUser.mockReset();
   deleteUser.mockResolvedValue(undefined);
-  setAuthAdmin({ deleteUser });
+  // Only deleteUser is exercised here; the assurance level is the auth
+  // plugin's business and has its own tests in audit.test.ts.
+  setAuthAdmin({ deleteUser, assuranceLevel: () => 'aal2' });
   sink = new LogSink();
   app = await buildApp(sink);
   await truncateAll();
@@ -55,6 +58,7 @@ beforeEach(async () => {
     CLIENT_B,
     CLINICIAN,
   ]);
+  await acceptBaa([CLINICIAN]);
 });
 afterEach(async () => {
   await app.close();

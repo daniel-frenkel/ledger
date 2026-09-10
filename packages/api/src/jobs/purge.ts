@@ -119,7 +119,15 @@ export async function purgeDeleted(): Promise<PurgeResult> {
     // fails if a column is added to users without a decision about it.
     const u = await tx
       .update(schema.users)
-      .set({ timezone: SCRUBBED_TIMEZONE })
+      .set({
+        timezone: SCRUBBED_TIMEZONE,
+        // Clinician-only columns, and a clinician account never reaches this
+        // job — DELETE /v1/me refuses one. They are scrubbed anyway: a column
+        // left out because of who happens to hold it is a column that gets
+        // missed the day that changes.
+        baaAcceptedVersion: null,
+        baaAcceptedAt: null,
+      })
       .where(inArray(schema.users.id, ids));
     const users = u.rowCount ?? 0;
     if (users > 0) removed['users_scrubbed'] = users;

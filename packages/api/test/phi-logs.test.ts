@@ -23,7 +23,7 @@ vi.mock('../src/services/ai.js', async (importOriginal) => {
 
 // Static imports are safe: vitest hoists vi.mock and vi.hoisted above them.
 import { closeDb } from '../src/db/client.js';
-import { CLIENT_A, CLINICIAN, DEVICE_A, LogSink, asUser, buildApp, truncateAll, uid } from './helpers.js';
+import { CLIENT_A, CLINICIAN, DEVICE_A, LogSink, acceptBaa, asUser, buildApp, truncateAll, uid } from './helpers.js';
 
 const SEEDS = {
   situation: 'ZQX-SITUATION-8841 telling the sergeant I froze',
@@ -48,7 +48,12 @@ afterAll(async () => {
   await app.close();
   await closeDb();
 });
-beforeEach(truncateAll);
+beforeEach(async () => {
+  await truncateAll();
+  // The clinician needs an accepted BAA to create an invite (gate A1); the
+  // gate itself is tested in audit.test.ts.
+  await acceptBaa([CLINICIAN]);
+});
 
 describe('PHI never reaches the log', () => {
   it('after a full sync (including a crisis match and a 400), no seeded string or user id is logged', async () => {

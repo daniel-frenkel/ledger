@@ -15,7 +15,7 @@ import pg from 'pg';
 import { MODALITY_SLUGS } from '@ledger/shared';
 import { closeDb } from '../src/db/client.js';
 import { DUPLICATE_MODALITY, UNKNOWN_MODALITIES } from '../src/routes/stack.js';
-import { ADMIN_URL, CLIENT_A, CLINICIAN, CLINICIAN_B, asUser, buildApp, truncateAll } from './helpers.js';
+import { acceptBaa, ADMIN_URL, CLIENT_A, CLINICIAN, CLINICIAN_B, asUser, buildApp, truncateAll } from './helpers.js';
 
 let app: FastifyInstance;
 let admin: pg.Client;
@@ -39,6 +39,7 @@ beforeEach(async () => {
     CLINICIAN,
     CLINICIAN_B,
   ]);
+  await acceptBaa([CLINICIAN, CLINICIAN_B]);
 });
 afterEach(async () => {
   await app.close();

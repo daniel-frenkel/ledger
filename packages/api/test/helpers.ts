@@ -78,4 +78,30 @@ export async function buildApp(sink?: LogSink) {
   return build(sink ? { logger: loggerTo(sink, 'trace') } : {});
 }
 
-export const asUser = (id: string, role: 'client' | 'clinician' = 'client') => ({ 'x-test-user': `${id}:${role}` });
+/**
+ * `id:role:aal`. The assurance level defaults to aal2 — a test that is not
+ * about MFA is a test whose clinician has already enrolled. Pass 'aal1' to
+ * exercise go-live gate B2.
+ */
+export const asUser = (id: string, role: 'client' | 'clinician' = 'client', aal: 'aal1' | 'aal2' = 'aal2') => ({
+  'x-test-user': `${id}:${role}:${aal}`,
+});
+
+/**
+ * Give a clinician what go-live gate A1 requires, so a test about something
+ * else is not a test about the BAA gate. Written straight to the row: the
+ * acceptance screen has its own tests.
+ */
+export async function acceptBaa(ids: string[], version = 'draft-2026-09-10'): Promise<void> {
+  const c = new pg.Client({ connectionString: ADMIN_URL });
+  await c.connect();
+  // Upserts the row as a clinician: a suite that never seeded users still gets
+  // a clinician who can create an invite, and one that did is unaffected.
+  await c.query(
+    `INSERT INTO users (id, role, baa_accepted_version, baa_accepted_at)
+     SELECT u, 'clinician', $2, now() FROM unnest($1::uuid[]) AS u
+     ON CONFLICT (id) DO UPDATE SET baa_accepted_version = $2, baa_accepted_at = now()`,
+    [ids, version],
+  );
+  await c.end();
+}
