@@ -51,6 +51,15 @@ const bodySchema = z.object({
     .regex(/^[a-z0-9-]+$/)
     .nullish(),
   assistantRunId: uuid.nullish(),
+  /**
+   * The scope gate's annotation, as the clinician was shown it. The gate never
+   * blocks and never refuses, so this is a receipt rather than a claim: it
+   * records that the floor was flagged as outside their stack at the moment
+   * they wrote, which is what a later reader needs to know. Computed in the
+   * clinician app from their own stack and the modality catalogue, both of
+   * which live there.
+   */
+  outsideStack: z.boolean().nullish(),
 });
 
 const formulations: FastifyPluginAsync = async (app) => {
@@ -117,6 +126,7 @@ const formulations: FastifyPluginAsync = async (app) => {
           floor: b.floor,
           protocolSlug: b.protocolSlug ?? null,
           assistantRunId: b.assistantRunId ?? null,
+          outsideStack: b.outsideStack ?? null,
         });
         return next;
       });
@@ -153,6 +163,7 @@ const formulations: FastifyPluginAsync = async (app) => {
       protocolSlug: r.protocolSlug,
       observations: r.observations,
       gates: r.gates,
+      outsideStack: r.outsideStack,
       assistantRunId: r.assistantRunId,
       createdAt: r.createdAt,
       note: decryptField(r.noteEnc, 'note_enc'),

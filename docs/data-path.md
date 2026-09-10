@@ -45,6 +45,7 @@ Identity (email, display name, phone) is **never** stored in the application dat
 | `link_invites` | none — not even with the token in hand | own rows; may create and revoke, never read the token |
 | `formulations` | **none in this version** | own rows, for a client they hold an active link to |
 | `assistant_runs` | none | own rows, for a client they hold an active link to |
+| `clinician_stacks`, `stack_goals` | none — not even their own clinician's | own rows only; not PHI, and deliberately not a directory |
 
 Two structural guarantees sit under the policies. Child tables (`body_states`, `reinterpretations`, `journal_entries`, `prediction_priors`) reference their parent with a composite foreign key on `(prediction_id, user_id)` / `(prior_id, user_id)`, so a row cannot be attached to another user's prediction or prior even if a policy were wrong. And `users.role` is not updatable by the API role at all (column-level grant covers only `timezone` and `deleted_at`), so a client cannot promote themselves; a link's two parties are fixed at creation by trigger.
 
@@ -54,7 +55,7 @@ Three decisions in that table are deliberate and worth stating plainly.
 
 **Formulations are not visible to the client.** A formulation is the clinician's working note, the way a paper chart is, and there is no policy granting a client SELECT on it. That is a defensible clinical choice and an uncomfortable one — the client cannot see what has been written about them — so it is recorded here as a decision rather than left as an omission. If it changes, it changes by adding a policy in a new migration and by designing the screen that presents it, not by widening an existing one.
 
-**There is no directory.** No table maps a clinician to a list of clients they might invite, and no endpoint searches for a person. A link exists only because a clinician created an invite and a client redeemed it. This is why the clinician's client picker shows a truncated UUID: there is no name in the application database to show, by design — identity lives in Supabase Auth and nothing joins the two.
+**There is no directory.** No table maps a clinician to a list of clients they might invite, and no endpoint searches for a person. `clinician_stacks` — the training stack that feeds the scope gate — is the nearest thing to one and is deliberately not it: a clinician reads only their own rows, no client can read any, and there is no policy that would let a search across clinicians be written without adding one. A link exists only because a clinician created an invite and a client redeemed it. This is why the clinician's client picker shows a truncated UUID: there is no name in the application database to show, by design — identity lives in Supabase Auth and nothing joins the two.
 
 **The client outlives the clinician.** Every client-owned row is owned by the client, not by the link. Revoking a link, or deleting the clinician's account, removes the clinician's read access and leaves the client's ledger untouched and fully theirs. Formulations and assistant runs are the mirror case: they belong to the clinician who wrote them, cascade with the clinician, and are already invisible once the link is not active.
 

@@ -18,6 +18,7 @@ import {
   boolean,
   check,
   customType,
+  date,
   foreignKey,
   index,
   integer,
@@ -497,6 +498,12 @@ export const formulations = pgTable(
     floor: smallint('floor').notNull(),
     protocolSlug: text('protocol_slug'),
     assistantRunId: uuid('assistant_run_id').references(() => assistantRuns.id, { onDelete: 'set null' }),
+    /**
+     * The scope gate annotates and never blocks. True means the clinician was
+     * told, as they wrote this, that the floor is outside their stack at this
+     * tier. Null for rows written before the gate existed. Added in 0005.
+     */
+    outsideStack: boolean('outside_stack'),
     createdAt: ts('created_at').notNull().defaultNow(),
     deletedAt: ts('deleted_at'),
   },
@@ -526,8 +533,60 @@ export type ReinterpretationRow = typeof reinterpretations.$inferSelect;
 export type PriorRow = typeof priors.$inferSelect;
 export type JournalEntryRow = typeof journalEntries.$inferSelect;
 export type CrisisEventRow = typeof crisisEvents.$inferSelect;
+// ---------------------------------------------------------------------------
+// clinician_stacks / stack_goals — the clinician's own training stack
+//
+// Not client data and not PHI: a clinician's training is their own, no client
+// can read it, and there is no policy that would let one. The catalogue of
+// slugs lives in apps/clinician/content/modalities.ts with the document it
+// came from, which is why modality_slug is text and not a foreign key.
+//
+// No unique index caps Master or Deep. Those are reading rules about a career,
+// the app warns rather than blocks, and a database that refused the write
+// would teach people to describe something false instead.
+// ---------------------------------------------------------------------------
+export const clinicianStacks = pgTable(
+  'clinician_stacks',
+  {
+    clinicianId: uuid('clinician_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    modalitySlug: text('modality_slug').notNull(),
+    tier: text('tier').notNull(),
+    createdAt: ts('created_at').notNull().defaultNow(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ name: 'clinician_stacks_pk', columns: [t.clinicianId, t.modalitySlug] }),
+    check('clinician_stacks_tier_known', sql`${t.tier} IN ('literacy','fluent','deep','master')`),
+    check('clinician_stacks_slug_shape', sql`${t.modalitySlug} ~ '^[a-z0-9-]{1,64}$'`),
+  ],
+);
+
+/** The roadmap: a modality, the tier aimed at, and when. No note column. */
+export const stackGoals = pgTable(
+  'stack_goals',
+  {
+    clinicianId: uuid('clinician_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    modalitySlug: text('modality_slug').notNull(),
+    targetTier: text('target_tier').notNull(),
+    targetBy: date('target_by'),
+    doneAt: ts('done_at'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ name: 'stack_goals_pk', columns: [t.clinicianId, t.modalitySlug] }),
+    check('stack_goals_tier_known', sql`${t.targetTier} IN ('literacy','fluent','deep','master')`),
+    check('stack_goals_slug_shape', sql`${t.modalitySlug} ~ '^[a-z0-9-]{1,64}$'`),
+  ],
+);
+
 export type LinkRow = typeof clinicianClientLinks.$inferSelect;
 export type DeviceRow = typeof devices.$inferSelect;
 export type LinkInviteRow = typeof linkInvites.$inferSelect;
 export type FormulationRow = typeof formulations.$inferSelect;
 export type AssistantRunRow = typeof assistantRuns.$inferSelect;
+export type ClinicianStackRow = typeof clinicianStacks.$inferSelect;
+export type StackGoalRow = typeof stackGoals.$inferSelect;

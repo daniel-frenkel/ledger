@@ -88,7 +88,9 @@ async function main(): Promise<void> {
   let signSum = 0;
 
   for (const c of cases) {
-    const out = await locate(c.note);
+    // No stack: the eval measures the model against the author's placement,
+    // not against a particular clinician's training.
+    const out = await locate(c.note, []);
     const ids = out.observations.map((o) => o.id);
     const floor = scoreFloors(ids).top;
     const sign = jaccard(c.observations, ids);

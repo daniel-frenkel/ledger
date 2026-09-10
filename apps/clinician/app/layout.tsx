@@ -66,6 +66,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <Link href="/library/protocols">Protocols</Link>
             <Link href="/formulate">Formulate</Link>
             <Link href="/invites">Invite</Link>
+            <Link href="/stack">Stack</Link>
           </nav>
           <ClinicianSession>{children}</ClinicianSession>
         </div>

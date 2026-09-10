@@ -84,9 +84,18 @@ const assistant: FastifyPluginAsync = async (app) => {
     });
     if (!link) return reply.status(403).send({ error: 'no active link with this client' });
 
+    // The clinician's own stack, so the model is not reasoning as though every
+    // tool were available. Not client data, and not derived from any.
+    const stack = await withUser(request.user, (tx) =>
+      tx
+        .select({ slug: schema.clinicianStacks.modalitySlug, tier: schema.clinicianStacks.tier })
+        .from(schema.clinicianStacks)
+        .where(eq(schema.clinicianStacks.clinicianId, request.user.id)),
+    );
+
     let out;
     try {
-      out = await locate(b.note);
+      out = await locate(b.note, stack);
     } catch (err) {
       // Both branches log a code and nothing else. A model error can quote the
       // request, and the request is the note.

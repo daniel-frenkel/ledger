@@ -756,4 +756,90 @@ describe('0003 invites and formulations', () => {
       await expect(c.query(`UPDATE assistant_runs SET model = 'x' WHERE id = $1`, [RUN])).rejects.toThrow();
     });
   });
+
+  // --- the training stack --------------------------------------------------
+
+  it('#34 a clinician sees only their own training stack', async () => {
+    await asCommit(CLINICIAN, 'clinician', (c) =>
+      c.query(`INSERT INTO clinician_stacks (clinician_id, modality_slug, tier) VALUES ($1, 'act', 'master')`, [
+        CLINICIAN,
+      ]),
+    );
+    await as(CLINICIAN, 'clinician', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM clinician_stacks`)).toBe(1);
+    });
+    await as(CLINICIAN_B, 'clinician', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM clinician_stacks`)).toBe(0);
+    });
+  });
+
+  it('#35 a client cannot read a training stack or a roadmap at all, linked or not', async () => {
+    await linkActive();
+    await asCommit(CLINICIAN, 'clinician', async (c) => {
+      await c.query(`INSERT INTO clinician_stacks (clinician_id, modality_slug, tier) VALUES ($1, 'cbt', 'fluent')`, [
+        CLINICIAN,
+      ]);
+      await c.query(`INSERT INTO stack_goals (clinician_id, modality_slug, target_tier) VALUES ($1, 'emdr', 'deep')`, [
+        CLINICIAN,
+      ]);
+    });
+    // Their own clinician's stack included. This is not a directory of who
+    // treats what, and nothing here is designed to become one.
+    await as(CLIENT_A, 'client', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM clinician_stacks`)).toBe(0);
+      expect(await count(c, `SELECT count(*) n FROM stack_goals`)).toBe(0);
+    });
+  });
+
+  it('#36 a clinician cannot write into another clinician’s stack or roadmap', async () => {
+    await as(CLINICIAN_B, 'clinician', async (c) => {
+      await expect(
+        c.query(`INSERT INTO clinician_stacks (clinician_id, modality_slug, tier) VALUES ($1, 'act', 'master')`, [
+          CLINICIAN,
+        ]),
+      ).rejects.toThrow();
+      await expect(
+        c.query(`INSERT INTO stack_goals (clinician_id, modality_slug, target_tier) VALUES ($1, 'act', 'master')`, [
+          CLINICIAN,
+        ]),
+      ).rejects.toThrow();
+    });
+  });
+
+  it('#37 the reading rules are not constraints: a second Master and Deep are stored', async () => {
+    // The app warns. The database does not refuse — a clinician mid-transition
+    // between certifications is describing something true.
+    await asCommit(CLINICIAN, 'clinician', (c) =>
+      c.query(
+        `INSERT INTO clinician_stacks (clinician_id, modality_slug, tier)
+         VALUES ($1,'act','master'), ($1,'cbt','master'), ($1,'emdr','deep'), ($1,'gestalt','deep')`,
+        [CLINICIAN],
+      ),
+    );
+    await as(CLINICIAN, 'clinician', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM clinician_stacks WHERE tier = 'master'`)).toBe(2);
+      expect(await count(c, `SELECT count(*) n FROM clinician_stacks WHERE tier = 'deep'`)).toBe(2);
+    });
+  });
+
+  it('#38 the scope annotation is a record, not a constraint', async () => {
+    await linkActive();
+    const insert = (outside: boolean | null, version: number) =>
+      asCommit(CLINICIAN, 'clinician', (c) =>
+        c.query(
+          `INSERT INTO formulations
+             (id, clinician_id, client_id, link_id, version, note_enc, falsify_enc,
+              observations, gates, floor, outside_stack)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, decode('00', 'hex'), decode('00', 'hex'),
+              '[]'::jsonb, '{"risk":true,"dial":true,"calibrated":true}'::jsonb, 6, $5)`,
+          [CLINICIAN, CLIENT_A, LINK, version, outside],
+        ),
+      );
+
+    // Every value is legal. The gate annotates; nothing about it can refuse a
+    // write, and there is no CHECK left that could.
+    await expect(insert(true, 1)).resolves.toBeTruthy();
+    await expect(insert(false, 2)).resolves.toBeTruthy();
+    await expect(insert(null, 3)).resolves.toBeTruthy();
+  });
 });

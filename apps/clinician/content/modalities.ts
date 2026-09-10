@@ -430,3 +430,81 @@ export function modalitiesForFloor(n: number): ModalityAtFloor[] {
 
 export const SEE_ALSO =
   '*See also: [[A Unified Clinical Model of Psychotherapy]] · [[Case Formulation — One Page]] · [[Decision Aid — Locating the Floor]] · [[Decision Map — Locating the Floor]] · [[Clinical Applications — Status, Mattering, and Rank]].*';
+
+// ---------------------------------------------------------------------------
+// The stack view of this module
+//
+// The training stack (docs/theory/tools/training-stack.md) needs one row per
+// modality with the floors it reaches. That is exactly the home-floors column
+// above, so it is derived here rather than retyped: this module is the single
+// source for modality slugs and home floors, and @ledger/shared takes the
+// result as an argument so it never has to hold a second copy.
+//
+// Ranges and qualifiers are preserved as floorsIn() reads them: "6–7" reaches
+// both, and "conditions" / "change process" reach no floor at all — those are
+// the dimmer layer, shown under the building rather than on it.
+// ---------------------------------------------------------------------------
+
+/** Qualifiers that reach no floor. `stakes` names a payoff, not a layer. */
+const DIMMER_TOKENS: readonly FloorToken[] = ['conditions', 'change process'];
+
+/** "**Choice Theory / Reality (11)**" → "Choice Theory / Reality". */
+const plainName = (label: string): string =>
+  label
+    .replace(/\*\*/g, '')
+    .replace(/\s*\(\d+\)\s*$/, '')
+    .trim();
+
+/** A stable id. The section anchor where the module has one, else the name. */
+const slugFor = (label: string, section?: string): string =>
+  section ??
+  plainName(label)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+export interface StackModalityRow {
+  slug: string;
+  name: string;
+  floors: number[];
+  dimmer: boolean;
+  /** What it pulls, from the source's own column. */
+  lever: string;
+}
+
+function fold(
+  rows: readonly { modality: string; primaryLever: string; homeFloors: readonly HomeFloorSegment[]; section?: string }[],
+  into: Map<string, StackModalityRow>,
+): void {
+  for (const r of rows) {
+    const slug = slugFor(r.modality, r.section);
+    const floors = r.homeFloors.flatMap((h) => h.floors);
+    const dimmer = r.homeFloors.some((h) => h.token !== undefined && DIMMER_TOKENS.includes(h.token));
+    const seen = into.get(slug);
+    if (seen) {
+      // Two rows, one modality — the core-six table and the canon table both
+      // carry Psychodynamic/EFT. Union the floors rather than picking a table.
+      for (const f of floors) if (!seen.floors.includes(f)) seen.floors.push(f);
+      seen.floors.sort((a, b) => a - b);
+      seen.dimmer ||= dimmer;
+      continue;
+    }
+    into.set(slug, {
+      slug,
+      name: plainName(r.modality),
+      floors: [...new Set(floors)].sort((a, b) => a - b),
+      dimmer,
+      lever: r.primaryLever,
+    });
+  }
+}
+
+/** Every modality in this module, as the stack sees it. Order: core six, then the canon. */
+export const STACK_MODALITIES: readonly StackModalityRow[] = (() => {
+  const out = new Map<string, StackModalityRow>();
+  fold(CORE_SIX, out);
+  fold(CANON, out);
+  return [...out.values()];
+})();
+
+export const STACK_MODALITY_SLUGS: readonly string[] = STACK_MODALITIES.map((m) => m.slug);
