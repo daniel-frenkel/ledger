@@ -78,6 +78,60 @@ GRANT DELETE ON users, predictions, priors, body_states, reinterpretations,
   journal_entries, crisis_events, devices, clinician_client_links,
   link_invites TO ledger_api;
 
+-- ---------------------------------------------------------------------------
+-- FIRST: take the verb back from everyone else.
+--
+-- 0001 gives the client FOR ALL on their own rows — predictions, priors,
+-- body_states, reinterpretations, prediction_priors, journal_entries — and FOR
+-- ALL includes DELETE. That was harmless only because no DELETE grant existed;
+-- the moment the grant above is made, every one of those policies starts
+-- permitting a client to hard-delete their own ledger, which is the exact
+-- guarantee this migration is supposed to preserve.
+--
+-- A RESTRICTIVE policy is ANDed with the permissive ones rather than ORed, so
+-- this makes 'system' a necessary condition for DELETE on these tables no
+-- matter what any present or future permissive policy says. It is written
+-- before the purge policies below because it is the one that matters: without
+-- it, they would be additions rather than the whole of the permission.
+--
+-- devices is deliberately absent: DELETE /v1/me removes push tokens under the
+-- user's own context, and a token outliving its account is the worse failure.
+-- ---------------------------------------------------------------------------
+--> statement-breakpoint
+CREATE POLICY predictions_delete_system_only ON predictions AS RESTRICTIVE
+  FOR DELETE TO ledger_api USING (app_role() = 'system');
+--> statement-breakpoint
+CREATE POLICY priors_delete_system_only ON priors AS RESTRICTIVE
+  FOR DELETE TO ledger_api USING (app_role() = 'system');
+--> statement-breakpoint
+CREATE POLICY body_states_delete_system_only ON body_states AS RESTRICTIVE
+  FOR DELETE TO ledger_api USING (app_role() = 'system');
+--> statement-breakpoint
+CREATE POLICY reinterpretations_delete_system_only ON reinterpretations AS RESTRICTIVE
+  FOR DELETE TO ledger_api USING (app_role() = 'system');
+--> statement-breakpoint
+CREATE POLICY journal_entries_delete_system_only ON journal_entries AS RESTRICTIVE
+  FOR DELETE TO ledger_api USING (app_role() = 'system');
+--> statement-breakpoint
+CREATE POLICY crisis_events_delete_system_only ON crisis_events AS RESTRICTIVE
+  FOR DELETE TO ledger_api USING (app_role() = 'system');
+--> statement-breakpoint
+CREATE POLICY links_delete_system_only ON clinician_client_links AS RESTRICTIVE
+  FOR DELETE TO ledger_api USING (app_role() = 'system');
+--> statement-breakpoint
+CREATE POLICY link_invites_delete_system_only ON link_invites AS RESTRICTIVE
+  FOR DELETE TO ledger_api USING (app_role() = 'system');
+--> statement-breakpoint
+CREATE POLICY users_delete_system_only ON users AS RESTRICTIVE
+  FOR DELETE TO ledger_api USING (app_role() = 'system');
+--> statement-breakpoint
+-- prediction_priors already had DELETE granted, from 0001, and its FOR ALL
+-- policy has always let a client remove a tag. That stays: a tag is not a
+-- record of anything. The restriction here is only that the *purge* path
+-- cannot be reached by anyone else.
+CREATE POLICY prediction_priors_purge_is_system ON prediction_priors AS RESTRICTIVE
+  FOR DELETE TO ledger_api USING (user_id = app_user_id() OR app_role() = 'system');
+
 --> statement-breakpoint
 CREATE POLICY predictions_system_purge ON predictions FOR DELETE TO ledger_api
   USING (app_purgeable_user(user_id));

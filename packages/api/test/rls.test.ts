@@ -929,9 +929,10 @@ describe('0003 invites and formulations', () => {
   // --- deletion -----------------------------------------------------------
 
   it('#44 a client cannot hard-delete their own live rows', async () => {
-    // 0007 grants DELETE for the first time. The guarantee that a client
-    // cannot destroy their own ledger now rests on a policy rather than on the
-    // absence of the verb, so it gets a test.
+    // 0007 grants DELETE for the first time. 0001's client policies are FOR
+    // ALL, which includes DELETE — so without the RESTRICTIVE policies in 0007
+    // that grant would hand every client the power to destroy their own
+    // ledger. This is the test that says it did not.
     await as(CLIENT_A, 'client', async (c) => {
       for (const t of ['predictions', 'priors', 'body_states', 'reinterpretations', 'journal_entries']) {
         const r = await c.query(`DELETE FROM ${t}`);
@@ -994,6 +995,9 @@ describe('0003 invites and formulations', () => {
     await admin.query(`UPDATE users SET deleted_at = now() - interval '31 days' WHERE id = $1`, [CLIENT_A]);
     await asSystem(async (c) => {
       await c.query(`DELETE FROM prediction_priors`);
+      await c.query(`DELETE FROM body_states`);
+      await c.query(`DELETE FROM reinterpretations`);
+      await c.query(`DELETE FROM crisis_events`);
       expect((await c.query(`DELETE FROM predictions`)).rowCount).toBe(1);
     });
   });
