@@ -3,7 +3,7 @@
  * in milestone 1 — the sentence is the point. No streaks, ever.
  */
 import React, { useEffect, useState } from 'react';
-import { FRAMING, summarizeLedger, type LedgerSummary } from '@ledger/shared';
+import { FRAMING, discountSentence, summarizeLedger, type LedgerSummary } from '@ledger/shared';
 import { allBodyStates, allPredictions, allPriors, allReinterpretations } from '@/db';
 import { Card, H1, H2, P, Screen, Small } from '@/ui';
 
@@ -40,6 +40,11 @@ export default function Ledger() {
         <P>{s.overall.sentence}</P>
         {s.overall.loudMisses > 0 ? <Small>{s.overall.loudMisses} of those were high-confidence forecasts that missed.</Small> : null}
         {s.overall.unclear > 0 ? <Small>{s.overall.unclear} couldn’t be scored.</Small> : null}
+        {/*
+          One clause, and only once there are enough answers to be a pattern.
+          A record, not a verdict: it says what was written down and stops.
+        */}
+        {discountSentence(s.discount) ? <Small>{discountSentence(s.discount)}</Small> : null}
       </Card>
 
       {s.byPrior.length > 0 ? <H2>By rule</H2> : null}

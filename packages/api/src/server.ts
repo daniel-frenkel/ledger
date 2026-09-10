@@ -15,6 +15,7 @@ import formulations from './routes/formulations.js';
 import ai from './routes/ai.js';
 import assistant from './routes/assistant.js';
 import stack from './routes/stack.js';
+import measures from './routes/measures.js';
 
 export async function build(opts: { logger?: FastifyInstance['log'] } = {}): Promise<FastifyInstance> {
   const c = config();
@@ -41,6 +42,7 @@ export async function build(opts: { logger?: FastifyInstance['log'] } = {}): Pro
   await app.register(ai);
   await app.register(assistant);
   await app.register(stack);
+  await app.register(measures);
 
   // Default error handler when Sentry is off: never leak internals.
   if (!c.SENTRY_DSN) {

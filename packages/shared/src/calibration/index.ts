@@ -15,7 +15,7 @@
  *   - There are no streaks. Nothing here rewards frequency of use.
  */
 
-import { HIGH_CONFIDENCE_THRESHOLD } from '../vocabulary/index.js';
+import { COUNTS_FOR_MAX, DISMISSED_AT_OR_BELOW, HIGH_CONFIDENCE_THRESHOLD } from '../vocabulary/index.js';
 import type { BodyState, Prediction, Prior, Reinterpretation } from '../schemas/index.js';
 
 // ---------------------------------------------------------------------------
@@ -103,11 +103,33 @@ export interface PriorSummary {
   furnace: FurnaceProfile;
 }
 
+/**
+ * The reinterpret move, as a quantity — proposal 06.
+ *
+ * `rate` is the mean discount: the average of (100 − countsFor) over scored
+ * misses and partials the client actually answered. `dismissed` counts the
+ * misses they put at or below DISMISSED_AT_OR_BELOW. `answered` is how many
+ * had an answer at all, and is why the client sentence waits for three: a rate
+ * computed from one answer is a number pretending to be a pattern.
+ */
+export interface DiscountSummary {
+  /** Mean of (100 − countsFor), 0–100. Null when nothing was answered. */
+  rate: number | null;
+  /** Misses discounted to DISMISSED_AT_OR_BELOW or under. */
+  dismissed: number;
+  /** Scored misses and partials with a non-null answer. */
+  answered: number;
+  /** Scored misses and partials, answered or not. */
+  askable: number;
+}
+
 export interface LedgerSummary {
   overall: CalibrationSummary;
   byPrior: PriorSummary[];
   /** Predictions with no prior tagged. */
   untagged: CalibrationSummary;
+  /** How much of what missed was discounted. */
+  discount: DiscountSummary;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,10 +176,14 @@ export function isLoudMiss(p: Prediction, bodyAfter?: BodyState['after']): boole
 }
 
 /** Resolved but not scorable, or a miss the client wasn't present for: clinician's, not the chart's. */
-export function shouldRouteToClinician(p: Prediction): boolean {
+export function shouldRouteToClinician(p: Prediction, bodyAfter?: BodyState['after']): boolean {
   if (!isResolved(p)) return false;
   if (p.outcomeVerdict === 'unclear') return true;
   if (p.presentForIt === false) return true;
+  // A loud miss the client immediately discounted is the reinterpret move
+  // caught in the act: high confidence, present, unassisted, disconfirmed —
+  // and then written off. Proposal 06. isLoudMiss itself is unchanged.
+  if (isLoudMiss(p, bodyAfter) && p.countsFor != null && p.countsFor <= DISMISSED_AT_OR_BELOW) return true;
   return false;
 }
 
@@ -332,6 +358,47 @@ export function furnaceProfile(
   };
 }
 
+/**
+ * How much of what missed was discounted.
+ *
+ * Pure, and never model-generated: this is a number shown to a client about
+ * themselves, so it is arithmetic over rows they wrote and nothing else.
+ *
+ * Only scored misses and partials are askable — a hit is not discounted and the
+ * question is not asked. An unanswered question is excluded from the mean
+ * rather than counted as a hundred; `answered` says how thin the number is.
+ */
+export function discountRate(predictions: Prediction[]): DiscountSummary {
+  const askable = predictions.filter(
+    (p) => isScored(p) && (p.outcomeVerdict === 'miss' || p.outcomeVerdict === 'partial') && !p.deletedAt,
+  );
+  const answered = askable.filter((p) => p.countsFor != null);
+  const dismissed = answered.filter(
+    (p) => p.outcomeVerdict === 'miss' && (p.countsFor as number) <= DISMISSED_AT_OR_BELOW,
+  ).length;
+
+  return {
+    rate: round(mean(answered.map((p) => COUNTS_FOR_MAX - (p.countsFor as number)))),
+    dismissed,
+    answered: answered.length,
+    askable: askable.length,
+  };
+}
+
+/**
+ * The client's ledger sentence, when there is enough to say it.
+ *
+ * Neutral wording: it is a record, not a verdict. Below three answers there is
+ * no sentence at all rather than a hedged one.
+ */
+export const MIN_ANSWERS_FOR_SENTENCE = 3;
+
+export function discountSentence(d: DiscountSummary): string | null {
+  if (d.answered < MIN_ANSWERS_FOR_SENTENCE || d.dismissed === 0) return null;
+  const misses = d.answered === 1 ? 'miss' : 'misses';
+  return `Of your ${d.answered} ${misses}, you said ${d.dismissed} didn’t fully count.`;
+}
+
 export interface LedgerInput {
   predictions: Prediction[];
   priors: Prior[];
@@ -364,5 +431,6 @@ export function summarizeLedger(input: LedgerInput): LedgerSummary {
       live.filter((p) => p.priorIds.length === 0),
       'untagged situations',
     ),
+    discount: discountRate(live),
   };
 }

@@ -121,6 +121,11 @@ async function linkActive(layers: Partial<Record<'calibration' | 'predictions' |
   );
 }
 
+/** Revoke the link the way the app does: a status change, not a delete. */
+async function revoke() {
+  await admin.query(`UPDATE clinician_client_links SET status = 'revoked' WHERE id = $1`, [LINK]);
+}
+
 describe('clients', () => {
   it('A sees its own rows in every table', async () => {
     await as(CLIENT_A, 'client', async (c) => {
@@ -841,5 +846,83 @@ describe('0003 invites and formulations', () => {
     await expect(insert(true, 1)).resolves.toBeTruthy();
     await expect(insert(false, 2)).resolves.toBeTruthy();
     await expect(insert(null, 3)).resolves.toBeTruthy();
+  });
+
+  // --- measures -----------------------------------------------------------
+
+  it('#39 a client reads every measure about themselves, including the clinician’s', async () => {
+    await linkActive();
+    await asCommit(CLINICIAN, 'clinician', (c) =>
+      c.query(
+        `INSERT INTO measures (id, client_id, clinician_id, instrument, score, administered_at, administered_by)
+         VALUES (gen_random_uuid(), $1, $2, 'ims', 42, now(), 'clinician')`,
+        [CLIENT_A, CLINICIAN],
+      ),
+    );
+    await as(CLIENT_A, 'client', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM measures`)).toBe(1);
+    });
+    await as(CLIENT_B, 'client', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM measures`)).toBe(0);
+    });
+  });
+
+  it('#40 a clinician reads a measure only through an active link', async () => {
+    await linkActive();
+    await asCommit(CLIENT_A, 'client', (c) =>
+      c.query(
+        `INSERT INTO measures (id, client_id, instrument, score, administered_at, administered_by)
+         VALUES (gen_random_uuid(), $1, 'ims', 30, now(), 'client')`,
+        [CLIENT_A],
+      ),
+    );
+    await as(CLINICIAN, 'clinician', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM measures`)).toBe(1);
+    });
+    await as(CLINICIAN_B, 'clinician', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM measures`)).toBe(0);
+    });
+    await revoke();
+    await as(CLINICIAN, 'clinician', async (c) => {
+      expect(await count(c, `SELECT count(*) n FROM measures`)).toBe(0);
+    });
+  });
+
+  it('#41 a client cannot write a measure that names a clinician', async () => {
+    await linkActive();
+    await as(CLIENT_A, 'client', async (c) => {
+      await expect(
+        c.query(
+          `INSERT INTO measures (id, client_id, clinician_id, instrument, score, administered_at, administered_by)
+           VALUES (gen_random_uuid(), $1, $2, 'ims', 42, now(), 'clinician')`,
+          [CLIENT_A, CLINICIAN],
+        ),
+      ).rejects.toThrow();
+    });
+  });
+
+  it('#42 a clinician cannot write a measure about a client they do not hold', async () => {
+    await as(CLINICIAN, 'clinician', async (c) => {
+      await expect(
+        c.query(
+          `INSERT INTO measures (id, client_id, clinician_id, instrument, score, administered_at, administered_by)
+           VALUES (gen_random_uuid(), $1, $2, 'ims', 42, now(), 'clinician')`,
+          [CLIENT_B, CLINICIAN],
+        ),
+      ).rejects.toThrow();
+    });
+  });
+
+  it('#43 a measure is append-only', async () => {
+    await asCommit(CLIENT_A, 'client', (c) =>
+      c.query(
+        `INSERT INTO measures (id, client_id, instrument, score, administered_at, administered_by)
+         VALUES (gen_random_uuid(), $1, 'ims', 30, now(), 'client')`,
+        [CLIENT_A],
+      ),
+    );
+    await as(CLIENT_A, 'client', async (c) => {
+      await expect(c.query(`UPDATE measures SET score = 1`)).rejects.toThrow();
+    });
   });
 });

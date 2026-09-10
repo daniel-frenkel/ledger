@@ -15,6 +15,8 @@ import {
   OWN_PART_OPTIONS,
   PRIOR_CATEGORIES,
   PRIOR_ORIGINS,
+  COUNTS_FOR_MAX,
+  COUNTS_FOR_MIN,
   SURPRISE_MAX,
   SURPRISE_MIN,
   USER_ROLES,
@@ -31,6 +33,12 @@ export const isoDate = z.string().datetime({ offset: true });
 export const confidence = z.number().int().min(CONFIDENCE_MIN).max(CONFIDENCE_MAX);
 export const intensity = z.number().int().min(INTENSITY_MIN).max(INTENSITY_MAX);
 export const surprise = z.number().int().min(SURPRISE_MIN).max(SURPRISE_MAX);
+/**
+ * "How much does this one count?" — 0 to 100, in steps of ten on the screen,
+ * but any integer in range is accepted on the wire so an older or a wider
+ * control cannot be rejected by a slider's step size.
+ */
+export const countsFor = z.number().int().min(COUNTS_FOR_MIN).max(COUNTS_FOR_MAX);
 
 /** Short free text: single words or phrases. Hard cap keeps prose out of jsonb. */
 const shortText = z.string().trim().min(1).max(80);
@@ -112,6 +120,14 @@ export const predictionSchema = z
     surpriseRating: surprise.nullable().optional(),
     presentForIt: z.boolean().nullable().optional(),
     ownPart: z.enum(OWN_PART_OPTIONS).nullable().optional(),
+    /**
+     * "How much does this one count?" — 0 to 100, asked only on a miss or a
+     * partial. Nullable and skippable: an unanswered question is null and
+     * never 100, because "they did not say" and "it counted completely" are
+     * different facts and the discount rate must not read the first as the
+     * second.
+     */
+    countsFor: countsFor.nullable().optional(),
     /** "Did you?" — the exit actually taken. */
     exitActual: z.enum(EXIT_MOVES).nullable().optional(),
     exitActualNote: shortText.nullable().optional(),
@@ -156,11 +172,21 @@ export const resolvePredictionInput = z.object({
   surpriseRating: surprise,
   presentForIt: z.boolean(),
   ownPart: z.enum(OWN_PART_OPTIONS).optional(),
+  /** Only asked on a miss or a partial; see resolvePredictionInput's refinement. */
+  countsFor: countsFor.optional(),
   exitActual: z.enum(EXIT_MOVES).optional(),
   exitActualNote: shortText.optional(),
   reinterpretation: longText.optional(),
   bodyAfter: bodyStateAfterSchema.optional(),
-});
+})
+  .superRefine((r, ctx) => {
+    // A hit is not discounted, and the question is not asked. Accepting an
+    // answer on a hit would put a number in the discount rate that nobody was
+    // asked for.
+    if (r.countsFor != null && r.outcomeVerdict !== 'miss' && r.outcomeVerdict !== 'partial') {
+      ctx.addIssue({ code: 'custom', path: ['countsFor'], message: 'only asked on a miss or a partial' });
+    }
+  });
 export type ResolvePredictionInput = z.infer<typeof resolvePredictionInput>;
 
 export const abandonPredictionInput = z.object({

@@ -254,6 +254,32 @@ export const INTENSITY_MAX = 10;
 export const SURPRISE_MIN = 0;
 export const SURPRISE_MAX = 10;
 
+/**
+ * "How much does this one count?" — proposal 06.
+ *
+ * Asked only on a miss or a partial, after the verdict and the surprise rating
+ * and *before* the reinterpretation text, so the number is not anchored by the
+ * story the client is about to write. Zero to a hundred in steps of ten.
+ *
+ * The question is ours. It measures the same thing the Immunization Scale
+ * measures, and it is deliberately not an IMS item: no item from a published
+ * instrument is reproduced anywhere in the client app.
+ */
+export const COUNTS_FOR_MIN = 0;
+export const COUNTS_FOR_MAX = 100;
+export const COUNTS_FOR_STEP = 10;
+
+/** A miss discounted to this or below is "dismissed" — the reinterpret move, quantified. */
+export const DISMISSED_AT_OR_BELOW = 30;
+
+export const COUNTS_FOR = {
+  label: 'How much does this one count?',
+  hint: 'Against the rule you were testing. Zero means it doesn’t count at all; a hundred means it counts completely.',
+  min: 'Doesn’t count',
+  max: 'Counts completely',
+  skip: 'Skip this',
+} as const;
+
 // ---------------------------------------------------------------------------
 // Crisis resources — shown by the hard-coded crisis module. Never by an LLM.
 // ---------------------------------------------------------------------------
