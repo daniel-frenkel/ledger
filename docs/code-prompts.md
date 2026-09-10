@@ -2,6 +2,8 @@
 
 How this works: paste **Prompt 0** at the start of every Code session (it's the standing context). Then paste one task prompt. When Code finishes, copy its final report back to me and I'll write the next one. Don't let Code and me drift — if Code proposes a design change, bring it to me before it's built.
 
+Migration ledger (contiguous, immutable once on main): 0000–0003 landed through Prompt 7 Part 1 · 0004 locating assistant (Prompt 7 Part 4, PR #20) · 0005 training stack (Prompt 13, PR #21) · 0006 counts_for + IMS + measures table (Prompt 14, PR #22) · 0007 research readiness (Prompt 8) · 0008 reference assistant threads (Prompt 9) · 0009 audit/MFA/BAA (Prompt 10). Prompts still to run: 13 and 14 are built and awaiting review; then 4 → 10 → 11 → 2 (revised) → 8 → 9. Prompt 12 is unused.
+
 ---
 
 ## Prompt 0 — Session preamble (paste first, every time)
