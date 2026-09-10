@@ -262,8 +262,11 @@ describe('the export', () => {
     const resolved = new Date(row[header.indexOf('resolved_at')]!);
 
     // Both were seeded at the same instant, so the interval is zero — and
-    // stays zero. The absolute date has moved by the participant's offset.
+    // stays zero. The absolute date has moved by the participant's offset,
+    // and must actually have moved: a shift of zero would pass an interval
+    // check while writing real dates.
     expect(resolved.getTime() - created.getTime()).toBe(0);
+    expect(days).not.toBe(0);
     expect(created.getTime()).toBe(new Date(T).getTime() + days * 86_400_000);
     expect(pseudonym(CLIENT_A, secret)).toBe(row[0]);
   });
