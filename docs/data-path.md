@@ -8,7 +8,9 @@ Everything a client types is treated as PHI: prediction situations and outcomes,
 
 Identity (email, display name, phone) is **never** stored in the application database. The identity provider holds it — **Google Cloud Identity Platform** in production, Supabase Auth in local development and CI (go-live gate A2, decided 11 September 2026). The app database knows a user only as a UUID and a role.
 
-Google's own guidance for Identity Platform says the same thing from the other side: PHI should not be stored in its user attributes, and should not be transmitted to it in tokens or claims. Nothing here does — the only identity it holds is an email address, and the reason that address still matters is covered under A4 below.
+Google's own guidance for Identity Platform says the same thing from the other side, and it is a condition of using the service with PHI rather than a suggestion: store only the minimum auth attributes, and put **no PHI in the display name, the photo URL, or a custom claim**. Nothing here does — the only attribute the tenant holds is an email address. The guidance's second condition, no SDKs or client libraries on a path that handles PHI, is satisfied by construction: both clients speak REST through `packages/shared/src/auth/identity-platform.ts` and the API verifies tokens with `jose`. Both conditions are recorded in `docs/gcp-setup.md`, because they are the kind of thing that stops being true by accident.
+
+Identity Platform, Cloud SQL, Cloud Run and Secret Manager are all named on Google's HIPAA covered-products list (verified 11 September 2026), so the BAA covers the whole PHI path — identity, database, compute and secrets.
 
 ## Hops
 
@@ -152,7 +154,9 @@ Backups age out on the provider's schedule and are the one copy the grace period
 
 Before any real client uses this: a signed BAA with Supabase (available on paid tiers) and with the hosting provider; the same for Sentry if it's kept in production; a written privacy notice; and a decision about whether the Anthropic call is inside or outside the covered-entity boundary (Anthropic offers a BAA for eligible customers; confirm before enabling the feature for anyone but yourself).
 
-**A transactional email provider is still required, and Identity Platform does not remove the requirement.** Identity Platform sends its own sign-in emails, and that path is *not* a place to rely on for this: Google's Identity Platform HIPAA guidance says PHI should not be transmitted through the service, and the association between an email address and a mental-health application is itself the disclosure. Identity Platform supports a custom SMTP sender, and go-live gate A4 is therefore unchanged — a provider that signs a BAA, configured as the sender, before any real client signs in.
+**A custom email sender is still required, and the reason is not compliance.** Identity Platform is named on Google's HIPAA covered-products list and its built-in sender is permitted under the BAA, so nothing here is blocked on an agreement. What is missing is everything else a sign-in email needs: a **sender identity on `courageloop.com`** rather than a Google default, **deliverability** to real inboxes as somebody's actual responsibility, and **control of the message body** — a sign-in email is the first thing a client ever sees from this application, and it should say what it is and what it is not. Identity Platform supports a custom SMTP sender; go-live gate A4 is where that is tracked.
+
+The older reasoning about the recipient list still holds and is the reason the *provider* matters: an address on a mental-health application's sending list is a disclosure even when the message carries only a link, so whoever sends it belongs in the same BAA and privacy-notice conversation as the database and the host.
 
 The paragraph below is the Supabase-era statement of the same requirement, kept because the reasoning is identical and because Supabase is still the development provider.
 
