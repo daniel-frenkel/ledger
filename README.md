@@ -2,7 +2,7 @@
 
 A prediction ledger for behavioral experiments. Not a therapist.
 
-**Ledger** is the name of the client-facing module — the thing a client opens and writes in. CourageLoop is the product it belongs to. The repo, the `@ledger/*` package scope, and every table and column keep the older name; only what a human reads changed.
+**Ledger** is the client-facing module — internally, and on the screen that shows the record. It is not a second product name: a client who was sent a CourageLoop link never has to learn one. The repo, the `@ledger/*` package scope, `ledger_api`, and every table and column keep the older name; renaming those needs a migration, and only what a human reads changed here.
 
 ## What it is
 

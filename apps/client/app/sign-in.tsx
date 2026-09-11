@@ -36,7 +36,7 @@ export default function SignIn() {
 
   return (
     <Screen>
-      <H1>Ledger</H1>
+      <H1>CourageLoop</H1>
       <P muted>{FRAMING.tagline}</P>
       <P>{FRAMING.notATherapist}</P>
       {!isConfigured() ? <P muted>Sign-in isn’t configured in this build (missing Supabase settings). See .env.example.</P> : null}

@@ -14,7 +14,7 @@ export async function sendCheckInPrompts(tokens: string[]): Promise<number> {
   if (valid.length === 0) return 0;
   const messages: ExpoPushMessage[] = valid.map((to) => ({
     to,
-    title: 'Ledger',
+    title: 'CourageLoop',
     body: 'You have a prediction waiting to be checked.',
     sound: null,
     priority: 'normal',
