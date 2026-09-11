@@ -24,6 +24,18 @@ const base = {
   SUPABASE_JWKS_URL: 'https://example.supabase.co/auth/v1/.well-known/jwks.json',
 } as NodeJS.ProcessEnv;
 
+/**
+ * Production also has to satisfy the Prompt 4 rule that a deployment which
+ * cannot honour a deletion request must not boot, so a production fixture
+ * carries the service-role key whether or not this test cares about it.
+ */
+const prod = (extra: NodeJS.ProcessEnv = {}) => ({
+  ...base,
+  NODE_ENV: 'production',
+  SUPABASE_SERVICE_ROLE_KEY: 'not-a-real-service-role-key-000',
+  ...extra,
+});
+
 const HOSTS_OF_RECORD = [
   'https://courageloop.com',
   'https://app.courageloop.com',
@@ -32,14 +44,14 @@ const HOSTS_OF_RECORD = [
 
 describe('the allowlist', () => {
   it('defaults to the three hostnames of record', () => {
-    const c = loadConfig({ ...base, NODE_ENV: 'production' });
+    const c = loadConfig(prod());
     expect(corsOrigins(c)).toEqual(HOSTS_OF_RECORD);
   });
 
   it('adds the dev origins outside production, and never inside it', () => {
     const dev = corsOrigins(loadConfig({ ...base, NODE_ENV: 'development' }));
     expect(dev).toContain('http://localhost:5173');
-    expect(corsOrigins(loadConfig({ ...base, NODE_ENV: 'production' }))).not.toContain('http://localhost:5173');
+    expect(corsOrigins(loadConfig(prod()))).not.toContain('http://localhost:5173');
   });
 
   it('refuses a wildcard', () => {
