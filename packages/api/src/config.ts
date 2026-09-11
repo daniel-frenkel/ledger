@@ -13,11 +13,34 @@ const bool = z
   .optional()
   .transform((v) => v === '1' || v === 'true');
 
+const splitOrigins = (raw: string): string[] =>
+  raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s !== '');
+
+/**
+ * Where the dev clients run. Added outside production only, so that `pnpm dev`
+ * works from a copied `.env.example` without anyone editing the allowlist —
+ * and so that nothing can add them to it in production by forgetting to.
+ */
+const DEV_ORIGINS = ['http://localhost:5173', 'http://localhost:3000'] as const;
+
 const schema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().int().positive().default(8080),
     HOST: z.string().default('0.0.0.0'),
+
+    /**
+     * The browser origins allowed to call this API, comma-separated. The three
+     * hostnames of record, and never a wildcard — `*` is rejected below rather
+     * than merely discouraged, because an allowlist that can be widened to
+     * everything by one character in an env var is not an allowlist.
+     */
+    CORS_ORIGINS: z
+      .string()
+      .default('https://courageloop.com,https://app.courageloop.com,https://api.courageloop.com'),
 
     DATABASE_URL: z.string().url(),
     DATABASE_MIGRATE_URL: z.string().url().optional(),
@@ -94,6 +117,20 @@ const schema = z
         message: 'required in production: account deletion cannot be honoured without it',
       });
     }
+    // Each entry must be a bare scheme-and-host. A trailing slash or a path
+    // makes an entry that can never match the Origin header a browser sends,
+    // which fails as a silent CORS refusal in production rather than at boot.
+    for (const o of splitOrigins(c.CORS_ORIGINS)) {
+      if (o === '*') {
+        ctx.addIssue({ code: 'custom', path: ['CORS_ORIGINS'], message: 'a wildcard is not an allowlist' });
+      } else if (!/^https?:\/\/[^/\s]+$/.test(o)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['CORS_ORIGINS'],
+          message: 'each origin must be scheme://host[:port] with no trailing slash or path',
+        });
+      }
+    }
     const key = Buffer.from(c.FIELD_ENCRYPTION_KEY, 'base64');
     if (key.length !== 32) {
       ctx.addIssue({ code: 'custom', path: ['FIELD_ENCRYPTION_KEY'], message: 'must be 32 bytes, base64' });
@@ -122,6 +159,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 export function config(): Config {
   if (!cached) cached = loadConfig();
   return cached;
+}
+
+/**
+ * The CORS allowlist, as @fastify/cors wants it. An exact list: an origin not
+ * on it gets no `Access-Control-Allow-Origin` header back at all.
+ */
+export function corsOrigins(c: Config = config()): string[] {
+  const listed = splitOrigins(c.CORS_ORIGINS);
+  return c.NODE_ENV === 'production' ? listed : [...listed, ...DEV_ORIGINS];
 }
 
 /** Root keys by version, for rotation. Version N reads FIELD_ENCRYPTION_KEY_V<N>, current reads FIELD_ENCRYPTION_KEY. */

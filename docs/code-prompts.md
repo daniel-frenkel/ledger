@@ -442,7 +442,14 @@ Hostnames of record:
 
 CORS: exactly those origins for the API, from config, no wildcard, and a test that asserts the allowlist rejects an origin not on it.
 
-Do not touch: the repo name, the @ledger/* scope, directory names, table or column names, migration filenames, or anything in docs/theory/. If you find a place where "Ledger" is doing duty as the product name rather than the module name, change it; where it names the client module, leave it.
+Do not touch: the repo name, the @ledger/* scope, directory names, table or column names, migration filenames, the ledger_api Postgres role, the database name, DATABASE_URL, or anything in docs/theory/. Those are identifiers; renaming them needs a migration and this prompt has none.
+
+The rule for the ambiguous cases, since "Ledger" does three jobs in this tree:
+- **Product name → rename.** Anywhere a human reads it as the name of the thing they are using: the H1, page titles, wordmarks, notification titles, the invite copy, the PWA manifest. The client never sees the word "Ledger" as a product name — a client who was sent a CourageLoop link should not have to learn a second name. These become CourageLoop.
+- **Common noun → keep.** "your ledger", "the ledger screen", "a prediction ledger for behavioral experiments". Lowercase, meaning the record itself. Untouched.
+- **Identifier → keep.** summarizeLedger, @ledger/*, ledger_api, file and directory names. Untouched.
+
+One special case, called out because it is safety copy: the CrisisCard disclaimer currently reads "Ledger is a notebook, not a therapist." The subject there is the product the client is holding, so it becomes "CourageLoop is a notebook, not a therapist." Quote the final string of every crisis-copy change in your report so I can read them as shipped.
 
 Report in the standard shape, with the list of files changed and the name-casing test's name.
 ```

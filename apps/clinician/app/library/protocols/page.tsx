@@ -4,7 +4,7 @@ import { PROTOCOL_DOCS, summaryHtml } from '@/content/protocol-docs';
 import { FRAMEWORK_CAVEAT, NOT_A_THERAPIST } from '@/content/model';
 import { DocBody } from '@/lib/doc';
 
-export const metadata = { title: 'Protocols — Ledger clinician' };
+export const metadata = { title: 'Protocols — CourageLoop clinician' };
 
 export default function ProtocolsIndex() {
   const rows = PROTOCOL_DOCS.map((p) => ({ ...p, html: summaryHtml(p) }));

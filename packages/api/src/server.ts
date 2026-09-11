@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
-import { config } from './config.js';
+import { config, corsOrigins } from './config.js';
 import { loggerOptions } from './logging/logger.js';
 import authPlugin from './plugins/auth.js';
 import sentryPlugin from './plugins/sentry.js';
@@ -29,7 +29,11 @@ export async function build(opts: { logger?: FastifyInstance['log'] } = {}): Pro
   });
 
   await app.register(helmet);
-  await app.register(cors, { origin: c.NODE_ENV === 'production' ? false : true });
+  // An exact allowlist, in every environment. This used to be `false` in
+  // production and `true` everywhere else, which meant production sent no CORS
+  // headers at all — the client PWA on its own hostname could not have called
+  // the API from a browser once the two were split across subdomains.
+  await app.register(cors, { origin: corsOrigins(c) });
   await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
   await app.register(sensible);
   await app.register(sentryPlugin);

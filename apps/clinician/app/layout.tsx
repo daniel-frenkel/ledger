@@ -41,7 +41,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata = {
-  title: 'Ledger — clinician',
+  title: 'CourageLoop — clinician',
   description: 'The Library and the floor locator. Reference material; no client data.',
 };
 
@@ -53,7 +53,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <header className="top">
             <p className="wm">
               <Link href="/library">
-                Ledger<span>.</span>
+                CourageLoop<span>.</span>
               </Link>
             </p>
             <p className="crumb">Clinician — reference</p>

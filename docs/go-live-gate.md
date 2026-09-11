@@ -2,6 +2,18 @@
 
 **Status:** the beta will include real clients. This document is the list of conditions, in order, and each one is either done or it isn't. Nothing here is legal advice; items marked ⚖ need a lawyer or the counsel a professional-liability insurer provides. The author is the vendor in this arrangement, not the treating clinician: under HIPAA, Loadbearing is a **business associate** of every clinician who uses it with a client, and every one of the subprocessors below is a business associate of Loadbearing.
 
+## Hostnames of record
+
+Settled with the rename to CourageLoop (Prompt 15). Every placeholder elsewhere resolves to one of these.
+
+| Host | What it serves | PHI |
+|---|---|---|
+| `courageloop.com` | The public site and the clinician app. `www` redirects to the apex. | The clinician app reads client rows once signed in; the site itself carries none. |
+| `app.courageloop.com` | The client PWA, and the `/join` target in an invitation link. | App shell only — see A6. The data is in IndexedDB and at the API, never on the static host. |
+| `api.courageloop.com` | The API. | Yes. Every hop below that says "the API" is this host. |
+
+The API's CORS allowlist is exactly these three origins, from `CORS_ORIGINS`, and never a wildcard: `*` and any entry with a trailing slash or path are rejected at boot rather than failing later as a silent refusal.
+
 ## A. Agreements — nothing else matters until these exist
 
 | # | Party | What | Status |

@@ -13,7 +13,7 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const p = protocolDoc(slug);
-  return { title: p ? `${p.heading} — Ledger clinician` : 'Not found' };
+  return { title: p ? `${p.heading} — CourageLoop clinician` : 'Not found' };
 }
 
 export default async function ProtocolPage({ params }: { params: Promise<{ slug: string }> }) {

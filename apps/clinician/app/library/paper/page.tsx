@@ -5,7 +5,7 @@ import { sourceByName } from '@/lib/markdown/sources';
 import { render } from '@/lib/markdown/render';
 import { DocLayout } from '@/lib/doc';
 
-export const metadata = { title: 'The paper — Ledger clinician' };
+export const metadata = { title: 'The paper — CourageLoop clinician' };
 
 /**
  * The paper is here because the corpus links to it more than to anything else —

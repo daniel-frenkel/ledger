@@ -4,7 +4,7 @@ import { sourceByName } from '@/lib/markdown/sources';
 import { render } from '@/lib/markdown/render';
 import { DocBody } from '@/lib/doc';
 
-export const metadata = { title: 'References — Ledger clinician' };
+export const metadata = { title: 'References — CourageLoop clinician' };
 
 const GROUPS: { kind: Reference['kind']; heading: string; note: string }[] = [
   {
