@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deleteDB } from 'idb';
 import type { Prediction, Reinterpretation, SyncPull } from '@ledger/shared';
 
-vi.mock('@/auth/supabase', () => ({
+vi.mock('@/auth/client', () => ({
   API_URL: 'http://api.test',
   accessToken: async () => 'a-token',
 }));

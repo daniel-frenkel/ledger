@@ -1,0 +1,180 @@
+# Google Cloud setup — the console actions, in order
+
+Everything in this list is something only Daniel can do: it needs console access
+to `courageloop-prod`, and the organisation forbids downloaded service-account
+keys, so there is no credential that would let anything else do it. The code
+that depends on each step is already written and merged.
+
+Follow it top to bottom. Nothing here asks you to decide anything — where there
+was a choice, it has been made and the reason is given.
+
+**Project facts.** Organisation `courageloop.com` (`611109317176`) · project
+`courageloop-prod` · billing `0195B9-B97371-6F379D` (paid) · region `us-west1`
+for everything · HIPAA BAA accepted 11 September 2026, scoped to the project.
+
+---
+
+## 1. Enable the APIs
+
+Console → **APIs & Services → Enable APIs and services**. Enable, one at a time:
+
+- `sqladmin.googleapis.com` — Cloud SQL Admin
+- `secretmanager.googleapis.com` — Secret Manager
+- `identitytoolkit.googleapis.com` — Identity Platform
+- `servicenetworking.googleapis.com` — needed for the private IP in step 3
+- `run.googleapis.com` — Cloud Run (Prompt 2 uses it; enabling it now costs nothing)
+
+## 2. The VPC and Private Service Access
+
+Cloud SQL's private IP is not a checkbox on the instance — the network has to
+be able to reach it first, and this is the step that is easy to discover only
+after the instance creation form refuses.
+
+1. **VPC network → VPC networks**. The `default` network exists in a new
+   project; use it. If it does not, create one named `default`, **Automatic**
+   subnet mode.
+2. **VPC network → Private Service Connection → Private services access →
+   Allocate IP range**.
+   - Name: `google-managed-services-default`
+   - **Automatic** allocation, prefix length **/16**
+3. Click **Create connection** (or **Private connection to services → Create**),
+   choose the range you just allocated, and wait for it to report connected.
+   This takes a few minutes.
+
+## 3. The database passwords, before the instance
+
+Create the secrets first so nothing ever types a password into a form twice.
+
+**Security → Secret Manager → Create secret**, twice:
+
+- Name `db-owner-password`, value: 32 random characters
+- Name `ledger-api-password`, value: 32 random characters
+
+Generate them with `openssl rand -base64 24` and paste. Do not reuse one for
+both: the owner runs migrations, `ledger_api` is what the running API connects
+as, and the whole point of the second one is that it cannot do the first one's
+job.
+
+## 4. Create the Cloud SQL instance
+
+**SQL → Create instance → PostgreSQL**.
+
+| Field | Value | Why |
+|---|---|---|
+| Instance ID | `courageloop-db` | The verification script expects `courageloop-prod:us-west1:courageloop-db`; anything else means passing `CLOUDSQL_INSTANCE` by hand. |
+| Password | the `db-owner-password` value | This is the `postgres` user. |
+| Database version | **PostgreSQL 16** | What the migrations are written and tested against. |
+| Cloud SQL edition | **Enterprise** | Enterprise Plus is roughly a 30% premium per vCPU and per GiB and buys nothing this workload needs. |
+| Preset | **Sandbox**, then edit below | The production presets start far larger than a beta needs. |
+| Region | **us-west1**, single zone | Same region as Cloud Run — cross-region would add latency to every query and egress cost to every row. Single zone is the cost decision in step 9. |
+| Machine | **1 vCPU, 3.75 GB** (lightweight) | See the cost note below. |
+| Storage | **SSD, 10 GB**, automatic increases **on** | 10 GB is far more than this schema will use for a long time; automatic increase means it cannot fill up silently. |
+| Connections | **Private IP on**, network `default`, **Public IP off** | No public surface at all. This is why step 2 had to come first. |
+| Data protection → Automated backups | **on**, window 03:00–07:00 | Gate B6. |
+| Data protection → Point-in-time recovery | **on** | Gate B6. Costs write-ahead log storage and is what makes "restore to just before the mistake" possible. |
+| Data protection → Deletion protection | **on** | This instance will hold PHI. |
+
+Creation takes ten to fifteen minutes.
+
+## 5. The database and the role
+
+**SQL → courageloop-db → Databases → Create database**, name `ledger`.
+
+The `ledger_api` role is *not* created here — `verify-cloudsql.sh` creates it
+from `packages/api/src/db/rls/000_roles.sql` in step 6, so that the role the
+production database has is the role the repository says it should have.
+
+## 6. Run the verification
+
+This is the step that proves nothing in the schema is Supabase-specific, which
+is the claim go-live gate A2 rests on. From a machine with `gcloud`, the
+[Cloud SQL Auth Proxy](https://cloud.google.com/sql/docs/postgres/sql-proxy)
+and this repository:
+
+```sh
+cloud-sql-proxy courageloop-prod:us-west1:courageloop-db &
+
+export CLOUDSQL_HOST=127.0.0.1
+export CLOUDSQL_INSTANCE=courageloop-prod:us-west1:courageloop-db
+export PGPASSWORD_OWNER="$(gcloud secrets versions access latest --secret=db-owner-password)"
+export PGPASSWORD_API="$(gcloud secrets versions access latest --secret=ledger-api-password)"
+
+packages/api/scripts/verify-cloudsql.sh
+```
+
+It creates the role, sets its password from the environment, runs the
+migrations, then runs the RLS suite as `ledger_api` and prints the case count.
+Paste the last block of its output back. The script refuses to run against a
+host outside `courageloop-prod`, refuses anything that looks like Supabase,
+refuses to start without both passwords, and prints no password or connection
+string at any point.
+
+## 7. Identity Platform
+
+**Security → Identity Platform → Enable**. Then:
+
+1. **Providers → Add a provider → Email/Password**. Enable it, and enable
+   **Email link (passwordless sign-in)**. Leave Password sign-in **off** —
+   there are no passwords in this system.
+2. **Providers → Authorised domains → Add domain**, twice:
+   `app.courageloop.com` and `courageloop.com`. This list is what stops a
+   stolen sign-in link being redirected somewhere else, so it should contain
+   these two and nothing else.
+3. **Multi-factor authentication → TOTP → Enable**. Gate B2. Leave SMS off:
+   it is a weaker factor and adds a telephone number to the identity record
+   for no gain.
+4. **Application setup details** → copy the **apiKey**. It goes in
+   `NEXT_PUBLIC_IDENTITY_PLATFORM_API_KEY` and `VITE_IDENTITY_PLATFORM_API_KEY`.
+   It is public by design: it names the project and authorises nothing.
+5. **Templates → SMTP settings**: leave for now, and see gate A4. Identity
+   Platform's own sender is not a path to rely on for this, so the beta cannot
+   open on it.
+
+## 8. What is still blocked, and on what
+
+- **A4, the email sender.** Step 7.5 above. A provider that signs a BAA has to
+  be chosen and configured as the tenant's SMTP sender before a real client
+  signs in.
+- **Public ingress for Cloud Run**, at Prompt 2. `constraints/iam.allowedPolicyMemberDomains`
+  is enforced org-wide and will refuse the `allUsers` grant a public service
+  needs. Do **not** relax it at the organisation. Add a policy exception scoped
+  to `courageloop-prod` only, and say so in that report.
+- **CI deployment**, at Prompt 2. `constraints/iam.disableServiceAccountKeyCreation`
+  means GitHub Actions cannot hold a downloaded key, so it needs Workload
+  Identity Federation. The runtime path already avoids keys: the API's
+  Identity Platform calls take their token from the metadata server.
+
+## 9. What this costs
+
+Indicative, from Google's published Enterprise-edition rates as of mid-2026
+(≈$0.0413 per vCPU-hour and ≈$0.0070 per GiB-hour, ≈$0.17 per GiB-month SSD,
+≈$0.08 per GiB-month backup). **The console is authoritative** — these are
+list rates in a US region, and the instance page will show the real figure
+before you click create.
+
+| Item | Monthly |
+|---|---|
+| 1 vCPU | ≈ $30 |
+| 3.75 GiB RAM | ≈ $19 |
+| 10 GB SSD | ≈ $2 |
+| Backups + PITR, ~10 GB | ≈ $1 |
+| Identity Platform, beta scale | $0 (free below 50k monthly active users) |
+| Secret Manager | ≈ $0 |
+| **Total, single zone** | **≈ $52** |
+
+Two notes on that number.
+
+**It is above the $10–25 that gate A2 estimated.** That figure assumed a
+shared-core instance (`db-g1-small`, ≈$28/month). Shared-core is cheaper and
+carries **no SLA**, which is a reasonable trade for a beta and a bad one the
+day a clinician depends on it. Either is defensible; the table above takes the
+1 vCPU option because moving up later means downtime and moving down never
+happens.
+
+**High availability doubles the compute.** A regional instance is ≈$100/month
+and is not on this list, because a beta with a handful of clients is better
+served by point-in-time recovery than by a standby — restore time is minutes
+either way at this size. Revisit it when a real practice depends on it.
+
+Still far below Supabase's HIPAA add-on at ~$599/month, which is the comparison
+that started this.

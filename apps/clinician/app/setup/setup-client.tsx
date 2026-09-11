@@ -9,14 +9,15 @@
  * server-side and explained here, rather than enforced here and hoped for
  * there.
  *
- * MFA enrollment is Supabase-specific and knowingly so: it is the one part of
- * this that talks to the provider's own API rather than through ours. Prompt
- * 11 replaces it. The *check* is already behind the seam in
- * packages/api/src/auth-admin.ts and does not move.
+ * Enrolment talks to the identity provider rather than to our API, which is
+ * unavoidable — it is the provider that holds the factor. Since Prompt 11 it
+ * goes through the seam in lib/auth.ts, so this screen no longer names a
+ * provider. The *check* was already behind packages/api/src/auth-admin.ts and
+ * never moved.
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ApiError, api, supabase, useClinicianSession } from '@/lib/api';
+import { ApiError, api, auth, useClinicianSession } from '@/lib/api';
 import { SignIn } from '@/app/sign-in';
 
 interface Me {
@@ -32,6 +33,8 @@ export function SetupClient({ version, draft, body }: { version: string; draft: 
 
   // --- MFA ------------------------------------------------------------------
   const [qr, setQr] = useState<string | null>(null);
+  const [secret, setSecret] = useState<string | null>(null);
+  const [reSignIn, setReSignIn] = useState(false);
   const [factorId, setFactorId] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -52,10 +55,10 @@ export function SetupClient({ version, draft, body }: { version: string; draft: 
     setBusy(true);
     setProblem(null);
     try {
-      const { data, error } = await supabase.auth.mfa.enroll({ factorType: 'totp' });
-      if (error || !data) throw error ?? new Error('enroll failed');
-      setFactorId(data.id);
-      setQr(data.totp.qr_code);
+      const started = await auth.startTotp('clinician');
+      setFactorId(started.handle);
+      setQr(started.uri);
+      setSecret(started.secret ?? null);
     } catch {
       setProblem('Could not start enrollment. Try again.');
     } finally {
@@ -68,14 +71,15 @@ export function SetupClient({ version, draft, body }: { version: string; draft: 
     setBusy(true);
     setProblem(null);
     try {
-      const { data: ch, error: chErr } = await supabase.auth.mfa.challenge({ factorId });
-      if (chErr || !ch) throw chErr ?? new Error('challenge failed');
-      const { error } = await supabase.auth.mfa.verify({ factorId, challengeId: ch.id, code: code.trim() });
-      if (error) throw error;
-      // The new token carries aal2; everything after this point is at the
-      // level the API requires.
+      await auth.confirmTotp(factorId, code);
       setQr(null);
+      setSecret(null);
       setCode('');
+      // Supabase steps the current session up to aal2 in place. Identity
+      // Platform mints the claim at sign-in, so the token in hand still says
+      // one factor and the API will still refuse client data until the next
+      // sign-in. Say so rather than letting the next screen fail.
+      if (auth.provider === 'identity-platform') setReSignIn(true);
       await refresh();
     } catch {
       setProblem('That code did not work. Check your authenticator and try again.');
@@ -113,6 +117,15 @@ export function SetupClient({ version, draft, body }: { version: string; draft: 
       </p>
 
       <h2>{mfaDone ? '✓ ' : ''}Two-factor authentication</h2>
+      {reSignIn ? (
+        <div className="callout warning">
+          <span className="c-title">Enrolled — sign in once more</span>
+          <p>
+            Your current session still proves one factor. Sign out and back in, and the new one will carry both.
+          </p>
+        </div>
+      ) : null}
+
       {mfaDone ? (
         <p className="meta">Enrolled. Your sign-in now proves two factors.</p>
       ) : (
@@ -129,8 +142,27 @@ export function SetupClient({ version, draft, body }: { version: string; draft: 
             </p>
           ) : (
             <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={qr} alt="Scan this with your authenticator app" width={200} height={200} />
+              {qr.startsWith('data:') ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img src={qr} alt="Scan this with your authenticator app" width={200} height={200} />
+              ) : (
+                /*
+                 * Identity Platform hands back an otpauth:// URI rather than a
+                 * rendered code. Drawing it as a QR would mean a QR library,
+                 * and this app does not add a dependency for one screen a
+                 * clinician sees once — so the secret is typed in, and the
+                 * link opens an authenticator directly on a phone.
+                 */
+                <div className="callout">
+                  <span className="c-title">Add this to your authenticator</span>
+                  <p className="tokenbox">
+                    <code>{secret}</code>
+                  </p>
+                  <p className="meta">
+                    On a phone, <a href={qr}>open it in your authenticator</a>. Otherwise type the key in by hand.
+                  </p>
+                </div>
+              )}
               <div className="field">
                 <span className="label">The six-digit code from the app</span>
                 <input inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)} />

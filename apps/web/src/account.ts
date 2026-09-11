@@ -9,7 +9,7 @@
  * The word the user has to type is here rather than in the screen so the
  * screen and the check cannot drift apart, and so the test can assert on it.
  */
-import { API_URL, accessToken } from '@/auth/supabase';
+import { API_URL, accessToken } from '@/auth/client';
 
 /** Typed exactly, case-sensitively, before the button does anything. */
 export const DELETE_CONFIRMATION = 'delete';

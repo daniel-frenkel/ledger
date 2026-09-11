@@ -1,4 +1,4 @@
-# Ledger — what to do next, in order
+# CourageLoop — what to do next, in order
 
 State as of now: `main` has the milestone-1 scaffold. `feature/exit-forecast` is committed locally in `C:\Github\ledger` and not yet pushed. Nothing is deployed; no Supabase or EAS project exists yet.
 
@@ -271,6 +271,32 @@ git push -u origin fix/local-setup
 Open a PR, merge when green.
 
 ---
+
+## Production — a different list
+
+Everything above is the **local and CI** path, and it stays on Supabase: that
+is the development provider and Prompt 11 did not change it. Production is
+somewhere else entirely, and the two differ only in environment values — the
+code path is identical, which is what keeps CI meaningful.
+
+| | Local and CI | Production |
+|---|---|---|
+| Database | Supabase, or Docker Postgres | **Cloud SQL for PostgreSQL**, `courageloop-prod:us-west1:courageloop-db` |
+| Auth | Supabase Auth, six-digit email code | **Identity Platform**, emailed sign-in link |
+| `AUTH_PROVIDER` | `supabase` | `identity-platform` |
+| Second factor | Supabase TOTP | Identity Platform TOTP |
+| Deletion credential | `SUPABASE_SERVICE_ROLE_KEY` | none — the metadata server, no key exists |
+
+**The console steps are in [`gcp-setup.md`](gcp-setup.md)**, in order, with
+nothing left to decide. They need an account that this repository cannot have:
+the organisation forbids downloaded service-account keys, so there is no
+credential that would let anything but a person at the console do them.
+
+The one step that comes back here is step 6 of that document —
+`packages/api/scripts/verify-cloudsql.sh`. It creates the `ledger_api` role,
+runs the migrations against Cloud SQL and then runs the whole RLS suite as
+`ledger_api`, which is what actually demonstrates that no policy in this
+repository depends on Supabase. Paste its output back.
 
 ## What's deliberately not in this list
 

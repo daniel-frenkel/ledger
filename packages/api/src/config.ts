@@ -52,10 +52,39 @@ const schema = z
     SUPABASE_JWT_SECRET: z.string().min(16).optional(),
 
     /**
-     * Which identity provider owns the auth user. One member today; Prompt 11
-     * adds 'identity-platform' with the move off Supabase (go-live gate A2).
+     * Which identity provider owns the auth user. Supabase stays for local and
+     * CI; production is Identity Platform (go-live gate A2). The code path is
+     * the same either way — only these values differ.
      */
-    AUTH_PROVIDER: z.enum(['supabase']).default('supabase'),
+    AUTH_PROVIDER: z.enum(['supabase', 'identity-platform']).default('supabase'),
+
+    /**
+     * Where the token-signing keys live.
+     *
+     * Provider-neutral, and the name to use. `SUPABASE_JWKS_URL` is the old
+     * name and still works for one release; it is read as a fallback below and
+     * logged as deprecated at boot.
+     */
+    AUTH_JWKS_URL: z.string().url().optional(),
+    /**
+     * Who must have issued the token, and who it must be for.
+     *
+     * Both are checked. A token from another Identity Platform project is a
+     * validly signed token — Google signs every project's tokens with the same
+     * keys — so without an issuer and audience check, anyone with any Google
+     * project could mint a token this API would accept. Left unset they are
+     * derived from the provider below, which is the only reason they are
+     * optional rather than required.
+     */
+    AUTH_ISSUER: z.string().optional(),
+    AUTH_AUDIENCE: z.string().optional(),
+
+    /**
+     * The Google Cloud project that owns the Identity Platform tenant, e.g.
+     * `courageloop-prod`. The issuer and audience of every token it mints are
+     * derived from it, so this is the one value that has to be right.
+     */
+    GCP_PROJECT_ID: z.string().min(1).optional(),
     /**
      * The only credential in this environment that can act on another user,
      * and the only runtime use of a service-role key. Read in exactly one
@@ -90,8 +119,23 @@ const schema = z
     AUTH_TEST_MODE: bool.default('false'),
   })
   .superRefine((c, ctx) => {
-    if (!c.SUPABASE_JWKS_URL && !c.SUPABASE_JWT_SECRET && !c.AUTH_TEST_MODE) {
-      ctx.addIssue({ code: 'custom', message: 'Set SUPABASE_JWKS_URL or SUPABASE_JWT_SECRET' });
+    if (c.AUTH_PROVIDER === 'supabase' && !c.AUTH_JWKS_URL && !c.SUPABASE_JWKS_URL && !c.SUPABASE_JWT_SECRET && !c.AUTH_TEST_MODE) {
+      ctx.addIssue({ code: 'custom', message: 'Set AUTH_JWKS_URL or SUPABASE_JWT_SECRET' });
+    }
+    // Identity Platform needs no JWKS URL — Google publishes one well-known
+    // key set for every project — but it does need to know which project, or
+    // it would accept a token minted by any Google project on earth.
+    if (
+      c.AUTH_PROVIDER === 'identity-platform' &&
+      !c.AUTH_TEST_MODE &&
+      !c.GCP_PROJECT_ID &&
+      !(c.AUTH_ISSUER && c.AUTH_AUDIENCE)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['GCP_PROJECT_ID'],
+        message: 'required with identity-platform: the issuer and audience are derived from it',
+      });
     }
     if (c.AUTH_TEST_MODE && c.NODE_ENV === 'production') {
       ctx.addIssue({ code: 'custom', message: 'AUTH_TEST_MODE cannot be enabled in production' });
@@ -160,6 +204,55 @@ export function config(): Config {
   if (!cached) cached = loadConfig();
   return cached;
 }
+
+/**
+ * Google signs the Identity Platform tokens of every project with one shared
+ * key set, published here. That is exactly why the issuer and audience checks
+ * below are not optional: the signature alone proves the token came from
+ * Google, not that it came from *this* project.
+ */
+export const IDENTITY_PLATFORM_JWKS =
+  'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
+
+export interface TokenVerification {
+  jwksUrl?: string;
+  /** HS256 fallback, Supabase-era projects only. */
+  secret?: string;
+  issuer?: string;
+  audience: string;
+}
+
+/**
+ * How to verify a bearer token, resolved from the provider.
+ *
+ * One function so that `auth/jwt.ts` has no provider branch in it: the move
+ * from Supabase to Identity Platform changes the values this returns and
+ * nothing about the verification itself.
+ */
+export function tokenVerification(c: Config = config()): TokenVerification {
+  if (c.AUTH_PROVIDER === 'identity-platform') {
+    const project = c.GCP_PROJECT_ID;
+    return {
+      jwksUrl: c.AUTH_JWKS_URL ?? IDENTITY_PLATFORM_JWKS,
+      ...(c.AUTH_ISSUER ?? project ? { issuer: c.AUTH_ISSUER ?? `https://securetoken.google.com/${project}` } : {}),
+      audience: c.AUTH_AUDIENCE ?? project ?? '',
+    };
+  }
+  // Supabase. AUTH_JWKS_URL is the name going forward; SUPABASE_JWKS_URL is
+  // read for one release so a deployment can be renamed without a restart.
+  const jwks = c.AUTH_JWKS_URL ?? c.SUPABASE_JWKS_URL;
+  const issuer = c.AUTH_ISSUER ?? (c.SUPABASE_URL ? `${c.SUPABASE_URL.replace(/\/$/, '')}/auth/v1` : undefined);
+  return {
+    ...(jwks ? { jwksUrl: jwks } : {}),
+    ...(c.SUPABASE_JWT_SECRET ? { secret: c.SUPABASE_JWT_SECRET } : {}),
+    ...(issuer ? { issuer } : {}),
+    audience: c.AUTH_AUDIENCE ?? 'authenticated',
+  };
+}
+
+/** True while a deployment is still using the pre-Prompt-11 variable name. */
+export const usingDeprecatedJwksName = (c: Config = config()): boolean =>
+  !c.AUTH_JWKS_URL && !!c.SUPABASE_JWKS_URL;
 
 /**
  * The CORS allowlist, as @fastify/cors wants it. An exact list: an origin not

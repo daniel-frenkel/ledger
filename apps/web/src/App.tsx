@@ -12,6 +12,7 @@ import Resolve from '@/screens/Resolve';
 import Ledger from '@/screens/Ledger';
 import Settings from '@/screens/Settings';
 import Join from '@/screens/Join';
+import AuthCallback from '@/screens/AuthCallback';
 
 function Tabs() {
   return (
@@ -69,12 +70,20 @@ function Gate() {
           fragment into memory on mount, then shows sign-in itself.
         */}
         <Route path="/join" element={<Join />} />
+        {/*
+          The emailed sign-in link lands here, signed out by definition. Like
+          /join it must render rather than redirect: a redirect drops the code
+          out of the URL, and the code is the whole message.
+        */}
+        <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="*" element={<Navigate to="/sign-in" replace />} />
       </Routes>
     );
   }
 
-  if (location.pathname === '/sign-in') return <Navigate to="/" replace />;
+  if (location.pathname === '/sign-in' || location.pathname === '/auth/callback') {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <Routes>

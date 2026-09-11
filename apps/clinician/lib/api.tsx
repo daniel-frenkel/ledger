@@ -3,34 +3,22 @@
 /**
  * The clinician app's session and its one way of calling the API.
  *
- * Same shape as apps/web: Supabase email OTP, no passwords, and the session
- * lives in the library's own storage rather than anything of ours — one thing
- * to clear on sign-out and nothing of ours to leak. The anon key is public by
- * design; RLS is what protects data.
+ * Same shape as apps/web: email, no passwords, and one provider chosen from
+ * the environment — Supabase for local and CI, Identity Platform in
+ * production. The seam is in ./auth; this file is the React context over it
+ * and the one way the app calls the API.
  *
  * Nothing in the Library imports this. Those pages are reference material with
  * no client data on them, and they stay prerendered and signed-out.
  */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { createClient, type Session } from '@supabase/supabase-js';
+import { API_URL, auth, isConfigured } from './auth';
 
-const env = process.env;
-
-export const API_URL = env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8080';
-/** Where the client app lives, for the invite URL. */
-export const WEB_URL = env['NEXT_PUBLIC_WEB_URL'] ?? 'http://localhost:5173';
-
-const SUPABASE_URL = env['NEXT_PUBLIC_SUPABASE_URL'] ?? '';
-const SUPABASE_ANON_KEY = env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '';
-
-export const supabase = createClient(SUPABASE_URL || 'http://localhost', SUPABASE_ANON_KEY || 'anon', {
-  auth: { autoRefreshToken: true, persistSession: true, detectSessionInUrl: false },
-});
-
-export const isConfigured = (): boolean => !!SUPABASE_URL && !!SUPABASE_ANON_KEY;
+export { API_URL, WEB_URL, auth, identityPlatform, isConfigured, supabase } from './auth';
 
 interface SessionState {
-  session: Session | null;
+  /** A boolean in an object, so `session ? …` reads as it did. */
+  session: { signedIn: true } | null;
   loading: boolean;
   signOut: () => Promise<void>;
 }
@@ -38,39 +26,38 @@ interface SessionState {
 const Ctx = createContext<SessionState>({ session: null, loading: true, signOut: async () => {} });
 
 export function ClinicianSession({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    void supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+    let alive = true;
+    void auth.accessToken().then((t) => {
+      if (!alive) return;
+      setSignedIn(!!t);
       setLoading(false);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => sub.subscription.unsubscribe();
+    const unsubscribe = auth.subscribe(() => {
+      if (alive) setSignedIn(auth.signedIn());
+    });
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
   }, []);
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
-    setSession(null);
+    await auth.signOut();
+    setSignedIn(false);
   }, []);
 
-  const value = useMemo(() => ({ session, loading, signOut }), [session, loading, signOut]);
+  const value = useMemo(
+    () => ({ session: signedIn ? ({ signedIn: true } as const) : null, loading, signOut }),
+    [signedIn, loading, signOut],
+  );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
 export const useClinicianSession = () => useContext(Ctx);
-
-export async function sendOtp(email: string): Promise<void> {
-  const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
-  if (error) throw error;
-}
-
-export async function verifyOtp(email: string, token: string): Promise<Session> {
-  const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
-  if (error || !data.session) throw error ?? new Error('no session');
-  return data.session;
-}
 
 export class ApiError extends Error {
   constructor(
@@ -90,8 +77,7 @@ export class ApiError extends Error {
  * rather than anything constructed from the request body.
  */
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
+  const token = await auth.accessToken();
   if (!token) throw new ApiError(401, 'Not signed in.');
 
   const res = await fetch(`${API_URL}${path}`, {

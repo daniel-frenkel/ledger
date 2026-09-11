@@ -9,7 +9,7 @@
  * made while the request was in flight is never clobbered by the pull.
  */
 import { syncPullSchema, type SyncPush } from '@ledger/shared';
-import { API_URL, accessToken } from '@/auth/supabase';
+import { API_URL, accessToken } from '@/auth/client';
 import { APP_VERSION } from '@/version';
 import { clearUsage, pendingUsage, recordUsage } from '@/usage';
 import {

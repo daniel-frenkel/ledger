@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DELETE_CONFIRMATION, DeleteAccountError, confirms, deleteAccount } from '@/account';
 
-vi.mock('@/auth/supabase', () => ({
+vi.mock('@/auth/client', () => ({
   API_URL: 'https://api.test',
   accessToken: async () => 'a-token',
 }));
@@ -77,7 +77,7 @@ describe('deleteAccount', () => {
 
   it('rejects without calling the server when there is no session', async () => {
     const f = respond(204);
-    const mod = await import('@/auth/supabase');
+    const mod = await import('@/auth/client');
     vi.spyOn(mod, 'accessToken').mockResolvedValue(null);
     await expect(deleteAccount()).rejects.toMatchObject({ status: 401 });
     expect(f).not.toHaveBeenCalled();

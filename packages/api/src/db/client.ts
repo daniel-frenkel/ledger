@@ -19,20 +19,43 @@ export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 let pool: pg.Pool | undefined;
 let db: Db | undefined;
 
+/**
+ * Whether this connection string reaches the database over a Unix socket.
+ *
+ * Cloud Run mounts the Cloud SQL connector at `/cloudsql/<instance>` and the
+ * connection string names it as the host, which node-postgres accepts as
+ * `postgresql://user:pw@/ledger?host=/cloudsql/project:region:instance`.
+ * That path never leaves the container: the connector holds the TLS session to
+ * the instance on the other side of it.
+ */
+export function isUnixSocket(url: string): boolean {
+  // Not a URL parse: `postgresql://user:pw@/db?host=/cloudsql/…` has an empty
+  // authority, which `new URL()` is entitled to treat as a parse failure.
+  const host = /[?&]host=([^&]+)/.exec(url)?.[1];
+  return !!host && decodeURIComponent(host).startsWith('/');
+}
+
 export function getPool(): pg.Pool {
   if (!pool) {
+    const c = config();
     pool = new pg.Pool({
-      connectionString: config().DATABASE_URL,
+      connectionString: c.DATABASE_URL,
       max: 10,
       idleTimeoutMillis: 30_000,
       // TLS with certificate verification in production. Supabase presents a
       // publicly trusted certificate; for a private CA set DATABASE_CA_CERT
       // (PEM) and it is pinned here. Never disable verification: this
       // connection carries decryptable PHI.
+      //
+      // A Unix socket is the exception, and not a weakening of it. Over
+      // `/cloudsql/…` there is no network to protect and no certificate to
+      // verify — the Cloud SQL connector on the other side of the socket is
+      // what holds the TLS session to the instance. Asking for TLS here fails
+      // the connection outright rather than securing anything.
       ssl:
-        config().NODE_ENV === 'production'
-          ? config().DATABASE_CA_CERT
-            ? { rejectUnauthorized: true, ca: config().DATABASE_CA_CERT }
+        c.NODE_ENV === 'production' && !isUnixSocket(c.DATABASE_URL)
+          ? c.DATABASE_CA_CERT
+            ? { rejectUnauthorized: true, ca: c.DATABASE_CA_CERT }
             : { rejectUnauthorized: true }
           : undefined,
     });
