@@ -7,7 +7,8 @@
  * way they would stop being identical is a security bug rather than a style
  * one — a refresh that is a minute late in one app and not the other, or an
  * MFA branch handled in the clinician app and forgotten in the client. So it
- * lives once, here.
+ * lives once, here. Raised as a design change at Prompt 11 and kept: the
+ * placement is deliberate, not an oversight to tidy up later.
  *
  * It stays honest about the package's contract in two ways: it holds no state,
  * and it takes its `fetch`, so `shared`'s suite never opens a socket.

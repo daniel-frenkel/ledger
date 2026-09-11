@@ -12,6 +12,32 @@ was a choice, it has been made and the reason is given.
 `courageloop-prod` · billing `0195B9-B97371-6F379D` (paid) · region `us-west1`
 for everything · HIPAA BAA accepted 11 September 2026, scoped to the project.
 
+**Covered products.** Verified against Google's HIPAA covered-products list on
+11 September 2026: **Identity Platform, Cloud SQL, Cloud Run and Secret
+Manager** are all named, so the BAA covers this architecture end to end. That is
+the whole PHI path — identity, database, compute, secrets — and it is why gate
+A2 could move off Supabase without buying an add-on.
+
+## Two conditions on Identity Platform
+
+From Google's Identity Platform HIPAA guidance. Both are satisfied today, and
+both are the kind of thing that stops being satisfied by accident, so they are
+written down rather than remembered.
+
+**Store only the minimum auth attributes. No PHI in the user record** — not in
+the display name, not in a photo URL, not in a custom claim. Today the only
+attribute the tenant holds is an email address, and the application database
+knows a user as a UUID and a role (`docs/data-path.md`). The temptation this
+guards against is a real one: a custom claim is a convenient place to cache
+something about a client, and it is the wrong place. If something needs to be
+known about a user, it belongs in Postgres behind RLS.
+
+**No SDKs or client libraries when handling PHI.** Already true, and not by
+accident: both clients speak the REST API through
+`packages/shared/src/auth/identity-platform.ts`, and the API verifies tokens
+with `jose` against a JWKS URL. Neither `firebase/auth` nor `firebase-admin` is
+a dependency of this repository, and neither should become one.
+
 ---
 
 ## 1. Enable the APIs
@@ -126,9 +152,11 @@ string at any point.
 4. **Application setup details** → copy the **apiKey**. It goes in
    `NEXT_PUBLIC_IDENTITY_PLATFORM_API_KEY` and `VITE_IDENTITY_PLATFORM_API_KEY`.
    It is public by design: it names the project and authorises nothing.
-5. **Templates → SMTP settings**: leave for now, and see gate A4. Identity
-   Platform's own sender is not a path to rely on for this, so the beta cannot
-   open on it.
+5. **Templates → SMTP settings**: leave for now, and see gate A4. The built-in
+   sender is permitted under the BAA and is fine for testing against your own
+   address; what it cannot do is send from `courageloop.com`, take
+   responsibility for deliverability, or let us write the message body. The
+   beta needs all three.
 
 ## 8. What is still blocked, and on what
 
@@ -164,12 +192,12 @@ before you click create.
 
 Two notes on that number.
 
-**It is above the $10–25 that gate A2 estimated.** That figure assumed a
-shared-core instance (`db-g1-small`, ≈$28/month). Shared-core is cheaper and
-carries **no SLA**, which is a reasonable trade for a beta and a bad one the
-day a clinician depends on it. Either is defensible; the table above takes the
-1 vCPU option because moving up later means downtime and moving down never
-happens.
+**It is above the $10–25 that gate A2 estimated**, and that is a decision
+rather than an overrun. The older figure assumed a shared-core instance
+(`db-g1-small`, ≈$28/month), which is cheaper and carries **no SLA** — a
+reasonable trade for a beta and a bad one the day a clinician depends on it.
+Settled 11 September 2026: **take the dedicated core.** Moving up later means
+downtime, and moving down never happens.
 
 **High availability doubles the compute.** A regional instance is ≈$100/month
 and is not on this list, because a beta with a handful of clients is better
