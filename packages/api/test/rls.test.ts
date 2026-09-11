@@ -869,9 +869,11 @@ describe('0003 invites and formulations', () => {
     await linkActive();
     await asCommit(CLINICIAN, 'clinician', (c) =>
       c.query(
-        `INSERT INTO measures (id, client_id, clinician_id, instrument, score, administered_at, administered_by)
-         VALUES (gen_random_uuid(), $1, $2, 'ims', 42, now(), 'clinician')`,
-        [CLIENT_A, CLINICIAN],
+        // A clinician-administered measure names the link it was taken under,
+        // from 0009: that is what makes it part of the care record.
+        `INSERT INTO measures (id, client_id, clinician_id, instrument, score, administered_at, administered_by, link_id)
+         VALUES (gen_random_uuid(), $1, $2, 'ims', 42, now(), 'clinician', $3)`,
+        [CLIENT_A, CLINICIAN, LINK],
       ),
     );
     await as(CLIENT_A, 'client', async (c) => {
@@ -1073,12 +1075,17 @@ describe('0003 invites and formulations', () => {
   it('#51 a clinician cannot write or read research consent', async () => {
     await linkActive();
     await as(CLINICIAN, 'clinician', async (c) => {
-      // No grant on those columns for anyone but the row's owner, and no
-      // policy that would let a clinician reach another user's row.
-      await expect(
-        c.query(`UPDATE users SET research_consent_at = now() WHERE id = $1`, [CLIENT_A]),
-      ).rejects.toThrow();
+      // users_self_update scopes UPDATE to `id = app_user_id()`, so a
+      // clinician aiming at a client's row matches nothing. Zero rows rather
+      // than an error — which is the same guarantee, and worth asserting as
+      // what it is rather than as what it is not.
+      const r = await c.query(`UPDATE users SET research_consent_at = now() WHERE id = $1`, [CLIENT_A]);
+      expect(r.rowCount).toBe(0);
     });
+    expect(
+      (await admin.query(`SELECT research_consent_at FROM users WHERE id = $1`, [CLIENT_A])).rows[0]!
+        .research_consent_at,
+    ).toBeNull();
     // Consent a clinician could set, or even see, is not consent.
     await asCommit(CLIENT_A, 'client', (c) =>
       c.query(`UPDATE users SET research_consent_at = now(), research_consent_version = 'v1' WHERE id = $1`, [CLIENT_A]),
