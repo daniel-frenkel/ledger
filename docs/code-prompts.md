@@ -2,7 +2,7 @@
 
 How this works: paste **Prompt 0** at the start of every Code session (it's the standing context). Then paste one task prompt. When Code finishes, copy its final report back to me and I'll write the next one. Don't let Code and me drift — if Code proposes a design change, bring it to me before it's built.
 
-Migration ledger (contiguous, immutable once on main): 0000–0003 landed through Prompt 7 Part 1 · 0004 locating assistant (Prompt 7 Part 4, PR #20) · 0005 training stack (Prompt 13, PR #21) · 0006 counts_for + IMS + measures table (Prompt 14, PR #22) · 0007 account deletion, system role, tombstone (Prompt 4, PR #23) · 0008 audit/MFA/BAA (Prompt 10) · 0009 research readiness (Prompt 8) · 0010 reference assistant threads (Prompt 9). Landed: 0000–0007. Queue: 15 (rename) → 11 → 2 (revised) → 8 → 9 — Prompt 10 landed as 0008. Prompt 12 is unused. Decided, not built: individually deleted entries get the same 30-day grace and purge job, children first; measures taken under an active clinician link survive a client purge (care record), measures with no link purge with the account — draw that line in Prompt 8.
+Migration ledger (contiguous, immutable once on main): 0000–0003 landed through Prompt 7 Part 1 · 0004 locating assistant (Prompt 7 Part 4, PR #20) · 0005 training stack (Prompt 13, PR #21) · 0006 counts_for + IMS + measures table (Prompt 14, PR #22) · 0007 account deletion, system role, tombstone (Prompt 4, PR #23) · 0008 audit/MFA/BAA (Prompt 10) · 0009 research readiness (Prompt 8) · 0010 reference assistant threads (Prompt 9). Landed: 0000–0007. Queue: 15 (rename) → 11 (GCP; project courageloop-prod, us-west1, BAA accepted 11 Sep 2026) → 2 (revised) → 8 → 9 — Prompt 10 landed as 0008. Prompt 12 is unused. Decided, not built: individually deleted entries get the same 30-day grace and purge job, children first; measures taken under an active clinician link survive a client purge (care record), measures with no link purge with the account — draw that line in Prompt 8.
 
 ---
 
@@ -329,10 +329,20 @@ Update docs/data-path.md for all three. Report in the standard shape.
 
 Runs before the revised Prompt 2. Reason: Supabase's HIPAA add-on is ~$599/month; Google's BAA is free and covers Cloud SQL and Cloud Run. Supabase remains the dev/CI database. `docs/go-live-gate.md` A2 has the decision.
 
-```
-Task: make production run on Cloud SQL for PostgreSQL and Google Cloud Identity Platform, with Supabase remaining the local/CI database, per docs/go-live-gate.md A2. Branch: feature/gcp-data-and-auth. No schema change; no new migration.
+**Account facts, settled 11 Sept 2026 — use these literally, do not invent placeholders:**
+- Organization: `courageloop.com`, id `611109317176`
+- Project: `courageloop-prod` (this exact id; no digits appended)
+- Billing account: `0195B9-B97371-6F379D`, paid (not trial)
+- Google Cloud HIPAA BAA: accepted 11 Sept 2026 by daniel@courageloop.com, scoped to `courageloop-prod`
+- Region for everything: `us-west1`
+- Admin identity: daniel@courageloop.com (Workspace; also the org admin)
 
-Database. Nothing in the schema, RLS, or migrations is Supabase-specific — prove it: create packages/api/src/db/rls/000_roles.sql's ledger_api role on a Cloud SQL instance, run pnpm db:migrate against it, run test:rls against it once with ALLOW_DESTRUCTIVE_TESTS scoped to its hostname, and report the 24. Connection from Cloud Run via the Cloud SQL connector or Unix socket — config only, documented in .env.example with the production form of DATABASE_URL and DATABASE_MIGRATE_URL. Give Daniel the exact console steps for the instance: smallest tier, automated backups on, point-in-time recovery on, private IP or authorized network, same region as Cloud Run.
+**Org policy warning.** This organization has Google's secure-by-default policies enforced, including `constraints/iam.allowedPolicyMemberDomains` (domain-restricted sharing). It stays enforced at the org level — that is deliberate. It blocks IAM grants to principals outside courageloop.com, which will block an `allUsers` grant on a public Cloud Run service. Do not relax it org-wide. When Prompt 2 needs public ingress, add the narrowest possible exception scoped to `courageloop-prod` only, and say so in the report. Also note: `constraints/iam.disableServiceAccountKeyCreation` is enforced, so use Workload Identity / the runtime service account rather than downloaded key files.
+
+```
+Task: make production run on Cloud SQL for PostgreSQL and Google Cloud Identity Platform in project courageloop-prod (region us-west1), with Supabase remaining the local/CI database, per docs/go-live-gate.md A2. Branch: feature/gcp-data-and-auth. No schema change; no new migration. I have created the project, attached paid billing, and accepted the HIPAA BAA; nothing else in the project exists yet, so you are specifying it from empty.
+
+Database. Nothing in the schema, RLS, or migrations is Supabase-specific — prove it: create packages/api/src/db/rls/000_roles.sql's ledger_api role on a Cloud SQL instance, run pnpm db:migrate against it, run test:rls against it once with ALLOW_DESTRUCTIVE_TESTS scoped to its hostname, and report the 24. Connection from Cloud Run via the Cloud SQL connector or Unix socket — config only, documented in .env.example with the production form of DATABASE_URL and DATABASE_MIGRATE_URL. Give Daniel the exact console steps for the instance, written so they can be followed without judgement calls: instance id, PostgreSQL version, the smallest tier that is sane for this workload, automated backups on, point-in-time recovery on, private IP in us-west1 (note whether this needs a VPC and Private Service Access configured first, and give those steps too if so), deletion protection on, and the password handling — the ledger_api and migration passwords go in Secret Manager, never in a file. State the expected monthly cost of the choices you name.
 
 Auth. Replace Supabase Auth with Identity Platform on both clients. The API keeps verifying JWTs by JWKS — point SUPABASE_JWKS_URL (rename to AUTH_JWKS_URL, keep the old name as a deprecated alias for one release) at Identity Platform's keys and validate issuer and audience. Sign-in stays email-only for clients: use Identity Platform's email sign-in; if it cannot deliver a six-digit code (it does email links), implement the link flow and make sure the link lands on /auth/callback in apps/web and carries nothing but the token. TOTP MFA for clinicians through Identity Platform's MFA, satisfying go-live-gate B2 — Prompt 10's aal2 check becomes a check on the Identity Platform MFA claim. The users table's id remains the auth provider's uid; document that existing Supabase-era test users will not carry over and that's fine because no real user exists yet.
 
@@ -342,7 +352,7 @@ Keep Supabase working for local and CI: the code path must be identical, with on
 
 docs/data-path.md: replace the Supabase hops with Cloud SQL and Identity Platform; note Supabase as dev-only; mark A2 with the date. docs/NEXT-STEPS.md: the production section.
 
-Report in the standard shape, with the test:rls result on Cloud SQL and the monthly cost estimate from the console.
+Report in the standard shape, with the test:rls result on Cloud SQL, the monthly cost estimate, and a single ordered checklist of every console action Daniel must take, each one a click path he can follow without deciding anything.
 ```
 
 ---
