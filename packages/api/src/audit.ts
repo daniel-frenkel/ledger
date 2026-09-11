@@ -29,7 +29,10 @@ export type AuditedTable =
   | 'journal_entries'
   | 'crisis_events'
   | 'formulations'
-  | 'measures';
+  | 'measures'
+  | 'phase_events'
+  /** Not a table: one line per export run, action 'export'. */
+  | 'research_export';
 
 export type AuditAction = 'read' | 'export';
 

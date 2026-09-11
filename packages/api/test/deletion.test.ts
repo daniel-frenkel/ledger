@@ -345,6 +345,11 @@ describe('the purge job', () => {
     'created_at',
     'deleted_at',
     'id',
+    // Research consent, from 0009. Scrubbed with everything else: a consent
+    // record for an account that no longer exists is a claim nobody can act on.
+    'research_consent_at',
+    'research_consent_version',
+    'research_consent_withdrawn_at',
     'role',
     'timezone',
   ];
@@ -373,6 +378,9 @@ describe('the purge job', () => {
     expect(row.role).toBe('client');
     expect(row.baa_accepted_version).toBeNull();
     expect(row.baa_accepted_at).toBeNull();
+    expect(row.research_consent_at).toBeNull();
+    expect(row.research_consent_version).toBeNull();
+    expect(row.research_consent_withdrawn_at).toBeNull();
   });
 
   it('keeps a formulation through its client’s purge, pointing at the tombstone', async () => {

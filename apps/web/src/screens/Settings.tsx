@@ -4,6 +4,8 @@ import { useSession } from '@/auth/session';
 import { persistenceState } from '@/storage';
 import { syncNow } from '@/sync';
 import { DELETE_CONFIRMATION, confirms, deleteAccount } from '@/account';
+import { researchState, setResearchConsent, type ResearchState } from '@/research';
+import { recordUsage } from '@/usage';
 import { Button, Card, Divider, Field, H1, H2, P, Screen, Small } from '@/ui';
 
 export default function Settings() {
@@ -29,9 +31,27 @@ export default function Settings() {
     }
   };
 
+  const [research, setResearch] = useState<ResearchState | null>(null);
+  const [researchBusy, setResearchBusy] = useState(false);
+
   useEffect(() => {
     void persistenceState().then(setPersisted);
+    void researchState().then(setResearch);
+    void recordUsage('settings_opened');
   }, []);
+
+  const toggleResearch = async () => {
+    if (!research) return;
+    setResearchBusy(true);
+    try {
+      await setResearchConsent(!research.consented, research.current ?? undefined);
+      setResearch(await researchState());
+    } catch {
+      // Leave the toggle where it was; the next open re-reads the truth.
+    } finally {
+      setResearchBusy(false);
+    }
+  };
 
   return (
     <Screen tabs>
@@ -59,6 +79,34 @@ export default function Settings() {
       <Card>
         <H2>Clinician</H2>
         <P muted>Solo by default. Connecting a clinician is optional, layer by layer, and revocable. This lands with the clinician app.</P>
+      </Card>
+
+      <Card>
+        <H2>Research</H2>
+        <P muted>
+          This app keeps a record of what you predicted and what happened. With your permission, a stripped-down copy
+          can be used to study whether keeping it changes anything.
+        </P>
+        <Small>
+          Numbers and choices only — how sure you were, whether it came true, when things happened. Never anything you
+          wrote. You are replaced by a scrambled code that is different every time and cannot be traced back, and every
+          date is moved by a random number of days, so how far apart things happened stays right and what day they
+          happened does not.
+        </Small>
+        <Small>
+          Off unless you turn it on. Your clinician is not told either way and cannot see this. Turning it off stops
+          your record being included from that moment on.
+        </Small>
+        {research ? (
+          <Button
+            title={research.consented ? 'Included — tap to stop' : 'Include my record'}
+            kind={research.consented ? 'secondary' : 'primary'}
+            disabled={researchBusy}
+            onPress={() => void toggleResearch()}
+          />
+        ) : (
+          <Small>Sign in to choose.</Small>
+        )}
       </Card>
 
       <Card>

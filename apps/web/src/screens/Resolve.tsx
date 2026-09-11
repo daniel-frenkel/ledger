@@ -32,6 +32,7 @@ import { bodyStatesFor, getPrediction, putBodyState, putPrediction, putReinterpr
 import { crisisGate } from '@/crisis/gate';
 import { newId, nowIso } from '@/ids';
 import { requestSync } from '@/sync';
+import { recordUsage } from '@/usage';
 import { Button, Card, Choice, Divider, Field, H1, H2, P, Scale, Screen, Small } from '@/ui';
 import { COUNTS_FOR, COUNTS_FOR_MAX, COUNTS_FOR_MIN, COUNTS_FOR_STEP } from '@ledger/shared';
 import { CrisisCard } from '@/ui/CrisisCard';
@@ -100,6 +101,7 @@ export default function Resolve() {
     const now = nowIso();
     await putPrediction({ ...p, abandonedAt: now, abandonReason, clientUpdatedAt: now });
     requestSync();
+    void recordUsage('prediction_resolved');
     back();
   };
 
@@ -140,6 +142,7 @@ export default function Resolve() {
       clientUpdatedAt: now,
     };
     const gate = await crisisGate('prediction', p.id, [resolved.actualOutcome, parsed.data.reinterpretation]);
+    if (gate) void recordUsage('crisis_card_shown');
     await putPrediction(resolved);
     if (parsed.data.reinterpretation) {
       await putReinterpretation({ id: newId(), predictionId: p.id, text: parsed.data.reinterpretation, createdAt: now, clientUpdatedAt: now });

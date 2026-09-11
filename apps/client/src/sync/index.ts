@@ -80,6 +80,9 @@ async function run(): Promise<void> {
     const outbox = await readOutbox();
     const push: SyncPush = {
       deviceId: await deviceId(),
+      // The Expo client is parked; usage events and app_version arrive with it.
+      appVersion: null,
+      usageEvents: [],
       predictions: outbox.predictions,
       bodyStates: outbox.bodyStates,
       reinterpretations: outbox.reinterpretations,

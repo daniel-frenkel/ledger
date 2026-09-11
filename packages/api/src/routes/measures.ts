@@ -36,6 +36,7 @@ const bodySchema = z.object({
   /** Only a clinician sends this; a client's own measure is about themselves. */
   clientId: uuid.nullish(),
   measure: measureSchema,
+  appVersion: z.string().max(64).nullish(),
 });
 
 /** The row, as it goes out. `score` is numeric in Postgres and arrives as a string. */
@@ -48,6 +49,8 @@ const toJson = (r: typeof schema.measures.$inferSelect) => ({
   subscales: r.subscales,
   administeredAt: r.administeredAt,
   administeredBy: r.administeredBy,
+  /** Present when a clinician was involved; the purge reads it. */
+  linkId: r.linkId,
   createdAt: r.createdAt,
 });
 
@@ -87,22 +90,30 @@ const measures: FastifyPluginAsync = async (app) => {
     // data, so the gate applies before anything is written.
     if (isClinician && !clinicianReady(request, reply)) return reply;
 
-    if (isClinician) {
-      const link = await withUser(request.user, async (tx) => {
-        const [row] = await tx
-          .select({ id: schema.clinicianClientLinks.id })
-          .from(schema.clinicianClientLinks)
-          .where(
-            and(
-              eq(schema.clinicianClientLinks.clinicianId, request.user.id),
-              eq(schema.clinicianClientLinks.clientId, clientId),
-              eq(schema.clinicianClientLinks.status, 'active'),
-            ),
-          );
-        return row ?? null;
-      });
-      if (!link) return reply.status(403).send({ error: NO_ACTIVE_LINK });
-    }
+    /**
+     * The link the measure was taken under, if any — proposal 03 §2 and the
+     * purge rule that follows from it. With a link the measure is part of the
+     * care record and survives the client's purge, the way a formulation does;
+     * without one it is the client's own data and goes with the account.
+     *
+     * A clinician's measure requires a link. A client's takes one if they are
+     * linked at the time and none if they are not, which is the honest reading
+     * of "was a clinician involved in this measurement".
+     */
+    const link = await withUser(request.user, async (tx) => {
+      const [row] = await tx
+        .select({ id: schema.clinicianClientLinks.id })
+        .from(schema.clinicianClientLinks)
+        .where(
+          and(
+            eq(schema.clinicianClientLinks.clientId, clientId),
+            eq(schema.clinicianClientLinks.status, 'active'),
+            ...(isClinician ? [eq(schema.clinicianClientLinks.clinicianId, request.user.id)] : []),
+          ),
+        );
+      return row ?? null;
+    });
+    if (isClinician && !link) return reply.status(403).send({ error: NO_ACTIVE_LINK });
 
     const id = newId();
     try {
@@ -116,6 +127,8 @@ const measures: FastifyPluginAsync = async (app) => {
           subscales: measure.subscales ?? null,
           administeredAt: new Date(measure.administeredAt),
           administeredBy: measure.administeredBy,
+          linkId: link?.id ?? null,
+          appVersion: body.data.appVersion ?? null,
         }),
       );
     } catch {

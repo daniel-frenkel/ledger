@@ -40,7 +40,7 @@ import {
   rowToReinterp,
 } from './codec.js';
 
-const { predictions, bodyStates, reinterpretations, priors, predictionPriors, journalEntries, crisisEvents, devices } =
+const { predictions, bodyStates, reinterpretations, priors, predictionPriors, journalEntries, crisisEvents, devices, usageEvents } =
   schema;
 
 type Rejected = SyncPull['rejected'][number];
@@ -81,9 +81,20 @@ export async function sync(user: RequestUser, push: SyncPush): Promise<SyncPull>
         set: { expoPushToken: push.expoPushToken ?? null, lastPullAt: sql`now()` },
       });
 
+    /**
+     * The build that wrote this push, onto every row it creates. One value per
+     * push rather than per row: the client cannot be running two versions at
+     * once, and a per-row field would be one more thing a client could lie
+     * about individually.
+     */
+    const stamp = <T extends object>(row: T): T & { appVersion: string | null } => ({
+      ...row,
+      appVersion: push.appVersion ?? null,
+    });
+
     // --- priors first (predictions reference them) ------------------------------
     for (const p of push.priors) {
-      const row = priorToRow(p, user.id, keyVersion);
+      const row = stamp(priorToRow(p, user.id, keyVersion));
       const err = await attempt(tx, (sp) =>
         sp
           .insert(priors)
@@ -96,7 +107,7 @@ export async function sync(user: RequestUser, push: SyncPush): Promise<SyncPull>
     // --- predictions ----------------------------------------------------------------
     const crisisToLog: CrisisEvent[] = [];
     for (const p of push.predictions) {
-      const row = predictionToRow(p, user.id, keyVersion);
+      const row = stamp(predictionToRow(p, user.id, keyVersion));
       const err = await attempt(tx, (sp) =>
         sp
           .insert(predictions)
@@ -137,7 +148,7 @@ export async function sync(user: RequestUser, push: SyncPush): Promise<SyncPull>
 
     // --- body states ----------------------------------------------------------------
     for (const b of push.bodyStates) {
-      const row = bodyStateToRow(b, user.id, keyVersion);
+      const row = stamp(bodyStateToRow(b, user.id, keyVersion));
       const err = await attempt(tx, (sp) =>
         sp
           .insert(bodyStates)
@@ -151,7 +162,7 @@ export async function sync(user: RequestUser, push: SyncPush): Promise<SyncPull>
     for (const r of push.reinterpretations) {
       const existing = await tx.select({ cu: reinterpretations.clientUpdatedAt }).from(reinterpretations).where(eq(reinterpretations.id, r.id));
       if (!existing[0]) {
-        const err = await attempt(tx, (sp) => sp.insert(reinterpretations).values(reinterpToRow(r, user.id, keyVersion)));
+        const err = await attempt(tx, (sp) => sp.insert(reinterpretations).values(stamp(reinterpToRow(r, user.id, keyVersion))));
         if (err) rejected.push({ id: r.id, table: 'reinterpretations', code: pgCode(err) });
         continue;
       }
@@ -174,7 +185,7 @@ export async function sync(user: RequestUser, push: SyncPush): Promise<SyncPull>
 
     // --- journal ----------------------------------------------------------------------
     for (const j of push.journalEntries) {
-      const row = journalToRow(j, user.id, keyVersion);
+      const row = stamp(journalToRow(j, user.id, keyVersion));
       const err = await attempt(tx, (sp) =>
         sp
           .insert(journalEntries)
@@ -196,7 +207,7 @@ export async function sync(user: RequestUser, push: SyncPush): Promise<SyncPull>
       const err = await attempt(tx, (sp) =>
         sp
           .insert(crisisEvents)
-          .values(crisisToRow(c, user.id))
+          .values(stamp(crisisToRow(c, user.id)))
           .onConflictDoUpdate({
             target: [crisisEvents.userId, crisisEvents.source, crisisEvents.sourceEntryId],
             set: {
@@ -207,6 +218,26 @@ export async function sync(user: RequestUser, push: SyncPush): Promise<SyncPull>
           }),
       );
       if (err) rejected.push({ id: c.id, table: 'crisis_events', code: pgCode(err) });
+    }
+
+    // --- usage events ---------------------------------------------------------------
+    // No payload, no entity id, no text — five columns, and proposal 03 §5 is
+    // explicit that it stays that way. Duplicates are ignored rather than
+    // rejected: a client retries a push it is unsure landed, and a repeated
+    // app_open is not an error worth telling anyone about.
+    for (const u of push.usageEvents) {
+      await attempt(tx, (sp) =>
+        sp
+          .insert(usageEvents)
+          .values({
+            id: u.id,
+            userId: user.id,
+            kind: u.kind,
+            appVersion: push.appVersion ?? null,
+            createdAt: new Date(u.createdAt),
+          })
+          .onConflictDoNothing(),
+      );
     }
 
     // --- pull -----------------------------------------------------------------------

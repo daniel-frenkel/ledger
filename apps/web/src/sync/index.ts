@@ -10,6 +10,8 @@
  */
 import { syncPullSchema, type SyncPush } from '@ledger/shared';
 import { API_URL, accessToken } from '@/auth/supabase';
+import { APP_VERSION } from '@/version';
+import { clearUsage, pendingUsage, recordUsage } from '@/usage';
 import {
   clearOutbox,
   forcePutReinterpretation,
@@ -83,8 +85,11 @@ async function run(): Promise<void> {
   setStatus('syncing');
   try {
     const outbox = await readOutbox();
+    const usage = await pendingUsage();
     const push: SyncPush = {
       deviceId: await deviceId(),
+      appVersion: APP_VERSION,
+      usageEvents: usage,
       predictions: outbox.predictions,
       bodyStates: outbox.bodyStates,
       reinterpretations: outbox.reinterpretations,
@@ -114,6 +119,10 @@ async function run(): Promise<void> {
     const rejected = new Set(pull.rejected.map((r) => `${r.table}:${r.id}`));
     const appendOnly = new Set(pull.rejected.filter((r) => r.code === 'append_only').map((r) => r.id));
     await clearOutbox(outbox.ids.filter((x) => !rejected.has(`${x.tbl}:${x.id}`) || appendOnly.has(x.id)));
+    // Usage events are fire-and-forget: the push succeeded, so drop exactly
+    // the ones that went, by id, in case another was recorded in flight.
+    await clearUsage(usage);
+    void recordUsage('sync_completed');
 
     // Merge pulled rows. Anything still queued locally is newer than what the
     // server has (or is about to be re-pushed), so leave it alone; every

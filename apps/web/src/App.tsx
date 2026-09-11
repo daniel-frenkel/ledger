@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { NavLink, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { SessionProvider, useSession } from '@/auth/session';
 import { ensurePersistence } from '@/storage';
+import { recordUsage } from '@/usage';
 import { startSyncListeners, syncNow } from '@/sync';
 import { P, Screen } from '@/ui';
 import SignIn from '@/screens/SignIn';
@@ -94,6 +95,7 @@ export default function App() {
   useEffect(() => {
     // Asked once, ever; the answer is recorded in meta.
     void ensurePersistence();
+    void recordUsage('app_open');
   }, []);
 
   return (

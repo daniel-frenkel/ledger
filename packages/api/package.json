@@ -15,6 +15,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "eval:locate": "tsx scripts/eval-locate.ts",
+    "research:export": "tsx scripts/research-export.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

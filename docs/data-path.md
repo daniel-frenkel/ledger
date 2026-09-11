@@ -47,6 +47,9 @@ Identity (email, display name, phone) is **never** stored in the application dat
 | `assistant_runs` | none | own rows, for a client they hold an active link to |
 | `clinician_stacks`, `stack_goals` | none — not even their own clinician's | own rows only; not PHI, and deliberately not a directory |
 | `access_log` | none | none — the system role only |
+| `phase_events` | own rows, read | own rows, through an active link; append-only |
+| `usage_events` | none — write-only from their own device | none — the system role only |
+| `exports` | none | none — the system role only |
 | `measures` | own rows, full — including ones a clinician administered | rows for a client they hold an active link to; writes only as themselves |
 
 `predictions.counts_for` is a structured number — an integer 0–100 answering "How much does this one count?" — and carries no prose, so it is included in `predictions_summary`, the view a clinician with `share_predictions = false` can read. Same reasoning as confidence and the verdict: a number scoped to a `user_id` is handled as PHI, and it is still not something a person typed.
@@ -84,6 +87,22 @@ The level is read through the auth seam, `AuthAdmin.assuranceLevel()`, not from 
 **An accepted BAA (gate A1).** Under HIPAA the vendor is a business associate of every clinician who uses this with a client, and the agreement has to exist before the first invite rather than after the first incident. Acceptance is recorded on the clinician's own row as `baa_accepted_version` and `baa_accepted_at`, writable by that user for that row and by nothing else — 0008 grants `UPDATE` on exactly those two columns and 0001's `users_self_update` scopes it. `POST /v1/invites` refuses while the version is null. The document is `docs/legal/clinician-baa.md`, currently a placeholder marked DRAFT with a header saying nobody should accept it; it is in `docs/legal/` rather than `docs/theory/` so the Library pipeline never sees it and the reference assistant can never quote it. **Its frontmatter is the only source of the version string** — the clinician app renders the document and offers its version, the API reads the same file and accepts nothing else, and a test asserts they agree. A constant that could drift from the document would mean recording consent to text nobody can produce. The API reads it lazily and fails those two routes with a 503 if the file is absent, rather than refusing to start; packaging `docs/legal/` and `docs/theory/` with the image is the Prompt 2 item already noted at hop 8.
 
 Both failures return a code — `MFA_REQUIRED`, `BAA_REQUIRED` — and a sentence the clinician can act on. The failure here is almost always "you have not done this yet", not "you are not allowed".
+
+## The research export
+
+Hop 9, and the only place data leaves this system as a file. `pnpm --filter @ledger/api research:export --dry-run | --write <dir>`, run by hand as the system role. Proposal 03 §6.
+
+**Consented only.** Participants with `research_consent_at` set and `research_consent_withdrawn_at` null, read at the moment the run starts. Enforced by RLS — `app_research_consented()` in 0009 — so a wrong `WHERE` in the exporter cannot widen it, and a withdrawal takes effect immediately with nothing to re-run. Research consent is separate from clinician sharing in every way: a different screen, a different flag, and withdrawing one does not touch the other. **The clinician app shows nothing about it and no clinician route returns it** — a clinician who could see it could ask about it, and a request from the person holding the notes is not a free choice.
+
+**Pseudonymous.** `HMAC-SHA256(user_id, secret)` truncated to 16 hex characters, with a secret generated per run and printed once. Two exports cannot be joined without it and the mapping is never stored — which also means a re-identification request cannot be answered, and that is the trade.
+
+**Date-shifted.** One random offset per participant in [−180, +180] days on every timestamp of theirs. Intervals within a participant survive exactly, which is what a single-case design needs; calendar dates do not, which is what re-identification needs.
+
+**Allowlisted.** `packages/api/src/research/allowlist.ts` names every column, and the exporter selects that list rather than the table — so a column added to a table cannot reach a CSV by being added. No `_enc` column, no label, no free text of any kind is on it, and tests assert both that and that nothing outside it appears in the output. Crisis events get the narrowest treatment: that one occurred and which deterministic rules fired, never the matched text, which was never stored.
+
+Each run writes an `exports` row — run id, time, participant count, allowlist hash — and **nothing about who**, which would defeat the pseudonyms. It also writes one `access_log` line per table with action `export`.
+
+**The assistant is out of scope for the first study.** `ASSISTANT_ENABLED` is false, no `assistant_runs` column is on the allowlist, and nothing generated by a model is in the export.
 
 ## Deletion
 
