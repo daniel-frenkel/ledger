@@ -2,7 +2,7 @@
 
 How this works: paste **Prompt 0** at the start of every Code session (it's the standing context). Then paste one task prompt. When Code finishes, copy its final report back to me and I'll write the next one. Don't let Code and me drift — if Code proposes a design change, bring it to me before it's built.
 
-Migration ledger (contiguous, immutable once on main): 0000–0003 landed through Prompt 7 Part 1 · 0004 locating assistant (Prompt 7 Part 4, PR #20) · 0005 training stack (Prompt 13, PR #21) · 0006 counts_for + IMS + measures table (Prompt 14, PR #22) · 0007 account deletion, system role, tombstone (Prompt 4, PR #23) · 0008 audit/MFA/BAA (Prompt 10) · 0009 research readiness (Prompt 8) · 0010 reference assistant threads (Prompt 9). Landed: 0000–0007. Queue: 10 → 11 → 2 (revised) → 8 → 9. Prompt 12 is unused. Decided, not built: individually deleted entries get the same 30-day grace and purge job, children first; measures taken under an active clinician link survive a client purge (care record), measures with no link purge with the account — draw that line in Prompt 8.
+Migration ledger (contiguous, immutable once on main): 0000–0003 landed through Prompt 7 Part 1 · 0004 locating assistant (Prompt 7 Part 4, PR #20) · 0005 training stack (Prompt 13, PR #21) · 0006 counts_for + IMS + measures table (Prompt 14, PR #22) · 0007 account deletion, system role, tombstone (Prompt 4, PR #23) · 0008 audit/MFA/BAA (Prompt 10) · 0009 research readiness (Prompt 8) · 0010 reference assistant threads (Prompt 9). Landed: 0000–0007. Queue: 15 (rename) → 11 → 2 (revised) → 8 → 9 — Prompt 10 landed as 0008. Prompt 12 is unused. Decided, not built: individually deleted entries get the same 30-day grace and purge job, children first; measures taken under an active clinician link survive a client purge (care record), measures with no link purge with the account — draw that line in Prompt 8.
 
 ---
 
@@ -406,4 +406,33 @@ Task: implement docs/proposal-06-counts-for.md, including the full eleven-instru
 6. docs/proposal-01 Status paragraph: note the new column. docs/data-path.md: counts_for is structured, no prose, included in predictions_summary.
 
 Report in the standard shape.
+```
+
+---
+
+## Prompt 15 — Rename to CourageLoop
+
+The product name is **CourageLoop** (one word, capital C and L). Domain bought: courageloop.com. Ledger stays the name of the client-facing module inside it. The repo, the `@ledger/*` package scope, and every table, column, and migration name stay exactly as they are — this prompt renames what a human reads, nothing a machine depends on.
+
+```
+Task: rename the product to CourageLoop in user-facing text and settle the production hostnames. Branch: feature/rename-courageloop. No migration. No schema change. No package or directory renames.
+
+Spelling, everywhere, without exception: CourageLoop. Not Courageloop, not Courage Loop, not COURAGELOOP. Add a test that greps the repo for the wrong casings in .md, .ts, .tsx and fails on a hit, excluding docs/theory/ (the theory corpus is about the model, not the product) and this prompt's own text.
+
+What changes:
+1. README.md — the product is CourageLoop; Ledger is the client-facing module. Keep the honesty paragraph exactly as it stands: predictive processing is a framework, not a validated treatment; the app delivers behavioral experiments and exposure with an explanatory layer; it is not a therapist.
+2. The clinician app: <title>, any header or nav wordmark, the sign-in screen, and the invite copy the clinician sends. apps/web: <title>, the /join screen, the PWA manifest name and short_name.
+3. docs/go-live-gate.md and docs/data-path.md: replace every placeholder hostname with the real ones below.
+4. .env.example: the three origins below, with a comment that the CORS allowlist is these exact origins and never a wildcard.
+
+Hostnames of record:
+- courageloop.com — the public site and the clinician app (apex; www redirects to apex)
+- app.courageloop.com — the client PWA, the /join target
+- api.courageloop.com — the API
+
+CORS: exactly those origins for the API, from config, no wildcard, and a test that asserts the allowlist rejects an origin not on it.
+
+Do not touch: the repo name, the @ledger/* scope, directory names, table or column names, migration filenames, or anything in docs/theory/. If you find a place where "Ledger" is doing duty as the product name rather than the module name, change it; where it names the client module, leave it.
+
+Report in the standard shape, with the list of files changed and the name-casing test's name.
 ```
