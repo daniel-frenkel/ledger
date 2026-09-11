@@ -8,15 +8,15 @@
  * second half, and it is the only place in the API that holds a credential
  * able to act on another user.
  *
- * It is an interface with one method because the provider is changing.
- * `docs/go-live-gate.md` A2 moves production off Supabase to Google Cloud
- * Identity Platform, and Prompt 11 does that work. When it does, it adds an
- * implementation below and changes the switch — `routes/me.ts` does not move.
+ * It is an interface because the provider changed. `docs/go-live-gate.md` A2
+ * moved production off Supabase to Google Cloud Identity Platform; both
+ * implementations are below and the switch picks one from `AUTH_PROVIDER`.
+ * Supabase stays for local and CI. Nothing in `routes/me.ts` moved, and the
+ * deletion tests never knew the difference, which was the point of the seam.
  *
- * There is no SDK here on purpose. The API already verifies Supabase tokens
- * with `jose` and a JWKS URL and has never needed the client library; one REST
- * call is a smaller thing to own than a dependency, and it is one fewer
- * package to replace at Prompt 11.
+ * There is no SDK here on purpose, for either provider. The API verifies
+ * tokens with `jose` and a JWKS URL and has never needed a client library; a
+ * REST call is a smaller thing to own than a dependency.
  */
 import { config } from './config.js';
 
@@ -100,6 +100,90 @@ class SupabaseAuthAdmin implements AuthAdmin {
 }
 
 /**
+ * Google Cloud Identity Platform, via the Identity Toolkit admin REST API.
+ *
+ * **No key file, by construction.** The organisation enforces
+ * `constraints/iam.disableServiceAccountKeyCreation`, so there is no downloaded
+ * credential to hold and none of this works from a laptop. The access token
+ * comes from the metadata server of whatever Cloud Run revision is executing,
+ * which means the identity acting here is the service account attached to the
+ * revision — visible in the console, revocable in one click, and impossible to
+ * copy out. That is a better arrangement than the Supabase service-role key it
+ * replaces, which is a long-lived secret sitting in the environment.
+ *
+ * No SDK either, for the same reason there is no Supabase client here: two REST
+ * calls are a smaller thing to own than `google-auth-library` and `firebase-admin`.
+ */
+class IdentityPlatformAuthAdmin implements AuthAdmin {
+  /** Cached until shortly before it expires; the metadata server rate-limits. */
+  private token?: { value: string; expiresAt: number };
+
+  constructor(private readonly projectId: string) {}
+
+  /**
+   * Identity Platform records the second factor in the `firebase` claim as
+   * `sign_in_second_factor` — 'totp' for the authenticator app that go-live
+   * gate B2 asks clinicians to enrol. Its presence is the whole signal: the
+   * token was minted after a second factor was proved.
+   *
+   * Fails closed, as the Supabase implementation does.
+   */
+  assuranceLevel(jwt: VerifiedClaims): AssuranceLevel {
+    const fb = jwt['firebase'] as { sign_in_second_factor?: unknown } | undefined;
+    const factor = fb?.sign_in_second_factor;
+    return typeof factor === 'string' && factor !== '' ? 'aal2' : 'aal1';
+  }
+
+  /** An OAuth token for the runtime service account, from the metadata server. */
+  private async accessToken(): Promise<string> {
+    const now = Date.now();
+    if (this.token && this.token.expiresAt > now + 60_000) return this.token.value;
+    let res: Response;
+    try {
+      res = await fetch(
+        'http://metadata.google.internal/computeMetadata/v1/instance/service-account/default/token',
+        { headers: { 'Metadata-Flavor': 'Google' } },
+      );
+    } catch (err) {
+      throw new AuthAdminError(`metadata server unreachable (${(err as Error).name})`);
+    }
+    if (!res.ok) throw new AuthAdminError(`metadata server status ${res.status}`);
+    const body = (await res.json()) as { access_token?: string; expires_in?: number };
+    if (!body.access_token) throw new AuthAdminError('metadata server returned no token');
+    this.token = { value: body.access_token, expiresAt: now + (body.expires_in ?? 3600) * 1000 };
+    return this.token.value;
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    const token = await this.accessToken();
+    let res: Response;
+    try {
+      res = await fetch(
+        `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(this.projectId)}/accounts:delete`,
+        {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ localId: userId }),
+        },
+      );
+    } catch (err) {
+      throw new AuthAdminError(`unreachable (${(err as Error).name})`);
+    }
+    // Already gone is done, as above: a retried deletion has to be able to
+    // finish. Identity Toolkit answers 400 USER_NOT_FOUND rather than 404.
+    if (res.status === 404) return;
+    if (res.status === 400) {
+      const body = (await res.text()).slice(0, 200);
+      if (body.includes('USER_NOT_FOUND')) return;
+      // Never echo the body: it can quote the request, and the request
+      // carries a user id.
+      throw new AuthAdminError('status 400');
+    }
+    if (!res.ok) throw new AuthAdminError(`status ${res.status}`);
+  }
+}
+
+/**
  * Whether the configured provider has what it needs.
  *
  * `routes/me.ts` checks this before it soft-deletes anything: a run that
@@ -112,6 +196,10 @@ export function authAdminConfigured(env = config()): boolean {
   switch (env.AUTH_PROVIDER) {
     case 'supabase':
       return !!env.SUPABASE_URL && !!env.SUPABASE_SERVICE_ROLE_KEY;
+    // No credential to check: the token comes from the metadata server at call
+    // time, and the project id is all that has to be configured.
+    case 'identity-platform':
+      return !!env.GCP_PROJECT_ID;
     default:
       return false;
   }
@@ -128,6 +216,9 @@ export function authAdmin(): AuthAdmin {
   switch (c.AUTH_PROVIDER) {
     case 'supabase':
       cached ??= new SupabaseAuthAdmin(c.SUPABASE_URL!, c.SUPABASE_SERVICE_ROLE_KEY!);
+      return cached;
+    case 'identity-platform':
+      cached ??= new IdentityPlatformAuthAdmin(c.GCP_PROJECT_ID!);
       return cached;
     default:
       // Unreachable while the enum has one member; here so adding one to the

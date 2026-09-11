@@ -9,7 +9,7 @@ import { eq } from 'drizzle-orm';
 import { USER_ROLES, type UserRole } from '@ledger/shared';
 import { config } from '../config.js';
 import { authAdmin } from '../auth-admin.js';
-import { verifySupabaseJwt } from '../auth/jwt.js';
+import { verifyJwt } from '../auth/jwt.js';
 import { withUser, schema } from '../db/client.js';
 import type { AssuranceLevel } from '../auth-admin.js';
 
@@ -50,7 +50,7 @@ async function identify(request: FastifyRequest): Promise<{ id: string; role: Us
   const auth = request.headers.authorization;
   if (!auth?.startsWith('Bearer ')) throw Object.assign(new Error('missing bearer token'), { statusCode: 401 });
   try {
-    const v = await verifySupabaseJwt(auth.slice(7));
+    const v = await verifyJwt(auth.slice(7));
     // Behind the seam: the claim's name is the provider's, and Prompt 11
     // changes the provider without changing the checks that read this.
     return { id: v.userId, role: v.role, aal: authAdmin().assuranceLevel(v.claims) };

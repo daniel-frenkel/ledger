@@ -7,3 +7,4 @@ export * from './clustering/index.js';
 export * from './crisis/index.js';
 export * from './measures/index.js';
 export * from './ids.js';
+export * from './auth/identity-platform.js';
