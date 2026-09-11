@@ -1,10 +1,18 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import type { Session } from '@supabase/supabase-js';
-import { supabase } from './supabase';
+/**
+ * Whether anyone is signed in, for the rest of the app.
+ *
+ * It used to hold a Supabase `Session` object, which meant every screen that
+ * asked "is someone signed in" was coupled to that provider's shape. It now
+ * holds a boolean and a user id: the only two things any screen actually used,
+ * and the two things both providers can answer.
+ */
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { auth } from './client';
 import { wipeAll } from '@/db';
 
 interface SessionState {
-  session: Session | null;
+  /** Kept as an object rather than a boolean so `session ? …` reads as before. */
+  session: { signedIn: true } | null;
   loading: boolean;
   signOut: () => Promise<void>;
 }
@@ -12,25 +20,38 @@ interface SessionState {
 const Ctx = createContext<SessionState>({ session: null, loading: true, signOut: async () => {} });
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    void supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+    let alive = true;
+    // Ask once for the current state: a stored session is already in memory for
+    // Identity Platform, and a round trip for Supabase.
+    void auth.accessToken().then((t) => {
+      if (!alive) return;
+      setSignedIn(!!t);
       setLoading(false);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => sub.subscription.unsubscribe();
+    const unsubscribe = auth.subscribe(() => {
+      if (alive) setSignedIn(auth.signedIn());
+    });
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
   }, []);
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
+  const signOut = useCallback(async () => {
+    await auth.signOut();
     await wipeAll(); // IndexedDB holds plaintext entries; it leaves with the account
-    setSession(null);
-  };
+    setSignedIn(false);
+  }, []);
 
-  return <Ctx.Provider value={{ session, loading, signOut }}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={{ session: signedIn ? { signedIn: true } : null, loading, signOut }}>
+      {children}
+    </Ctx.Provider>
+  );
 }
 
 export const useSession = () => useContext(Ctx);

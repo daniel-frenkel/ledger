@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { FRAMING, CRISIS_RESOURCES } from '@ledger/shared';
 import { useSession } from '@/auth/session';
+import { auth } from '@/auth/client';
 import { persistenceState } from '@/storage';
 import { syncNow } from '@/sync';
 import { DELETE_CONFIRMATION, confirms, deleteAccount } from '@/account';
@@ -10,6 +11,7 @@ import { Button, Card, Divider, Field, H1, H2, P, Screen, Small } from '@/ui';
 
 export default function Settings() {
   const { signOut, session } = useSession();
+  const signedInAs = session ? auth.email() : null;
   const [persisted, setPersisted] = useState<string | null>(null);
 
   const [armed, setArmed] = useState(false);
@@ -128,7 +130,7 @@ export default function Settings() {
 
       <Divider />
       <Button title="Sync now" kind="secondary" onPress={() => void syncNow()} />
-      <Small>Signed in as an anonymous id{session?.user.email ? ` (${session.user.email})` : ''}.</Small>
+      <Small>Signed in as an anonymous id{signedInAs ? ` (${signedInAs})` : ''}.</Small>
       <Button title="Sign out and clear this browser" kind="danger" onPress={() => void signOut()} />
 
       <Divider />

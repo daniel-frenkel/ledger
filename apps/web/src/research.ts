@@ -9,7 +9,7 @@
  * anyone in them — the same protection working in the other direction, which
  * the consent text says in those words.
  */
-import { API_URL, accessToken } from '@/auth/supabase';
+import { API_URL, accessToken } from '@/auth/client';
 
 export interface ResearchState {
   /** The consent text version this build shows. */

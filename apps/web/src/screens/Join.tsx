@@ -17,7 +17,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '@/auth/session';
-import { API_URL, accessToken } from '@/auth/supabase';
+import { API_URL, accessToken } from '@/auth/client';
 import { captureToken, clearToken, heldToken } from '@/join/token';
 import { syncNow } from '@/sync';
 import { Button, Card, H1, H2, P, Screen, Small } from '@/ui';
