@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { sourcesIn } from '@/lib/markdown/sources';
 
-export const metadata = { title: 'Tools — Ledger clinician' };
+export const metadata = { title: 'Tools — CourageLoop clinician' };
 
 /** The order the Decision Aid itself implies: aid, map, router, one-pager. */
 const ORDER = [

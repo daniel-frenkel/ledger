@@ -77,7 +77,7 @@ export default function InvitesPage() {
     <main>
       <h1>Invite a client</h1>
       <p className="standfirst">
-        Send the client a link. They choose what to share when they accept, and can change it or end the link at any
+        Send the client a link to CourageLoop. They choose what to share when they accept, and can change it or end the link at any
         time — from their side, not yours.
       </p>
 

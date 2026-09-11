@@ -35,7 +35,7 @@ export async function scheduleLocalCheckIn(predictionId: string, at: Date): Prom
   const when = new Date(at.getTime() + 2 * 60 * 60 * 1000); // past the crest, not in the doorway
   if (when.getTime() <= Date.now()) return;
   await Notifications.scheduleNotificationAsync({
-    content: { title: 'Ledger', body: 'A prediction is waiting to be checked.', data: { predictionId } },
+    content: { title: 'CourageLoop', body: 'A prediction is waiting to be checked.', data: { predictionId } },
     trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: when },
   });
 }

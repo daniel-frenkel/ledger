@@ -1,6 +1,8 @@
-# Ledger
+# CourageLoop
 
 A prediction ledger for behavioral experiments. Not a therapist.
+
+**Ledger** is the client-facing module — internally, and on the screen that shows the record. It is not a second product name: a client who was sent a CourageLoop link never has to learn one. The repo, the `@ledger/*` package scope, `ledger_api`, and every table and column keep the older name; renaming those needs a migration, and only what a human reads changed here.
 
 ## What it is
 
@@ -10,11 +12,11 @@ That's the whole loop — predict, check, notice the gap. Everything else in thi
 
 ## What it is not
 
-**Ledger is not a therapist, and it is not a treatment.** The design draws on predictive processing, a framework from cognitive science for how brains use prediction and prediction error. Predictive processing is a lens, not a validated clinical intervention, and this app does not claim otherwise. What Ledger actually delivers is old and well-studied: written behavioral experiments and exposure, under the expectancy-violation rules described by Craske et al. (2014), with an explanatory layer on top. The explanatory layer is the part that's new, and it is the part with no outcome data.
+**CourageLoop is not a therapist, and it is not a treatment.** The design draws on predictive processing, a framework from cognitive science for how brains use prediction and prediction error. Predictive processing is a lens, not a validated clinical intervention, and this app does not claim otherwise. What CourageLoop actually delivers is old and well-studied: written behavioral experiments and exposure, under the expectancy-violation rules described by Craske et al. (2014), with an explanatory layer on top. The explanatory layer is the part that's new, and it is the part with no outcome data.
 
 If you are in crisis, the app will show you the 988 Suicide & Crisis Lifeline and the Veterans Crisis Line (dial 988 and press 1, or text 838255). That check is hard-coded, runs before anything else on every entry, and never involves a language model. It is a pointer to help, not help.
 
-Ledger can be used alone. Connecting a clinician is optional and requires your explicit consent, layer by layer, revocable at any time.
+CourageLoop can be used alone. Connecting a clinician is optional and requires your explicit consent, layer by layer, revocable at any time.
 
 ## How the pieces fit
 
@@ -22,7 +24,7 @@ Ledger can be used alone. Connecting a clinician is optional and requires your e
 | --- | --- |
 | `packages/shared` | Types, zod schemas, and every number the app shows: calibration, prior clustering, the furnace profile, the crisis rules. Pure functions. No network, no LLM. Fully unit-tested. |
 | `packages/api` | Fastify server. Verifies Supabase JWTs, enforces row-level security in Postgres *and* in application code, encrypts free text at the field level, runs the sync endpoint the phone talks to, and is the only place the Anthropic API is ever called. |
-| `apps/web` | **The milestone-1 client.** React + Vite PWA. Offline-first: entries land in the browser's IndexedDB and sync when there's a connection. Solo mode by default. |
+| `apps/web` | **Ledger — the milestone-1 client.** React + Vite PWA. Offline-first: entries land in the browser's IndexedDB and sync when there's a connection. Solo mode by default. |
 | `apps/client` | Expo / React Native app. Same loop, same local-first design on SQLite. **Parked** — kept in the tree, not the client being developed. |
 | `apps/clinician` | Next.js web app for a linked clinician. **Placeholder in milestone 1.** |
 

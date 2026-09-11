@@ -23,7 +23,7 @@ import {
 import { ALL_SECTIONS, MODALITY_SECTIONS } from '@/content/modality-sections';
 import { Inline, P, headingAnchor } from '@/lib/inline';
 
-export const metadata = { title: 'Modalities — Ledger clinician' };
+export const metadata = { title: 'Modalities — CourageLoop clinician' };
 
 /** [[#Heading]] resolves only to a section that exists on this page. */
 const resolveHeading = (heading: string): string | undefined => {

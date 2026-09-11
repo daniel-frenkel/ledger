@@ -5,7 +5,7 @@ import { CORE_SIX, CANON } from '@/content/modalities';
 import { REFERENCES, isVerified } from '@/content/references';
 import { sourcesIn } from '@/lib/markdown/sources';
 
-export const metadata = { title: 'Library — Ledger clinician' };
+export const metadata = { title: 'Library — CourageLoop clinician' };
 
 export default function LibraryIndex() {
   const tools = sourcesIn('tools').length;

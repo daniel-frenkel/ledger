@@ -49,8 +49,8 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/v1\//],
       },
       manifest: {
-        name: 'Ledger',
-        short_name: 'Ledger',
+        name: 'CourageLoop',
+        short_name: 'CourageLoop',
         description: 'A prediction ledger for behavioral experiments. Not a therapist.',
         start_url: '/',
         scope: '/',

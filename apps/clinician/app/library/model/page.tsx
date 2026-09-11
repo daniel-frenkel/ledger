@@ -5,7 +5,7 @@ import { sourceByName } from '@/lib/markdown/sources';
 import { render } from '@/lib/markdown/render';
 import { DocLayout } from '@/lib/doc';
 
-export const metadata = { title: 'The model — Ledger clinician' };
+export const metadata = { title: 'The model — CourageLoop clinician' };
 
 /**
  * This page used to render docs/theory-mapping.md, which is a design memo —

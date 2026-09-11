@@ -3,7 +3,7 @@ import { FLOOR_CONTENT, FLOOR_CAVEATS } from '@/content/floors';
 import { citeLabel } from '@/content/references';
 import { BUILDING_CAPTION } from '@/content/observations';
 
-export const metadata = { title: 'The floors — Ledger clinician' };
+export const metadata = { title: 'The floors — CourageLoop clinician' };
 
 export default function FloorsIndex() {
   return (

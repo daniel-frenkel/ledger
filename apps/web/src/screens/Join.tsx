@@ -26,6 +26,15 @@ import SignIn from '@/screens/SignIn';
 /** The one message every failure gets. */
 export const JOIN_FAILED = "This invitation isn't valid. Ask your clinician for a new one.";
 
+/**
+ * The only screen that names the product to someone who has never seen it.
+ * Everywhere else inside the client app the thing is called the ledger, which
+ * is the right word once you are in it and no use at all to a stranger who has
+ * just followed a link from their clinician.
+ */
+export const JOIN_WHAT_THIS_IS =
+  'CourageLoop is a notebook for behavioral experiments. Not a therapist, and not a treatment.';
+
 export default function Join() {
   const { session } = useSession();
   const navigate = useNavigate();
@@ -59,6 +68,7 @@ export default function Join() {
           <Card>
             <H2>A clinician has invited you</H2>
             <P muted>Sign in first, and we’ll bring you straight back here.</P>
+            <Small>{JOIN_WHAT_THIS_IS}</Small>
           </Card>
         </Screen>
         <SignIn />

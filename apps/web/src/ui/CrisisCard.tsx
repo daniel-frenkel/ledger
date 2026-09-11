@@ -27,7 +27,7 @@ export function CrisisCard({ resources, onDismiss }: { resources: CrisisResource
           </div>
         );
       })}
-      <Small>Ledger is a notebook, not a therapist. This card is a pointer to people who can help; it is not help.</Small>
+      <Small>CourageLoop is a notebook, not a therapist. This card is a pointer to people who can help; it is not help.</Small>
       <Button title="Continue" kind="link" onPress={onDismiss} />
     </Card>
   );

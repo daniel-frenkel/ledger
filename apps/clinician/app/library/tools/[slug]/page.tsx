@@ -11,7 +11,7 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const t = sourceByName(slug);
-  return { title: t ? `${t.title} — Ledger clinician` : 'Not found' };
+  return { title: t ? `${t.title} — CourageLoop clinician` : 'Not found' };
 }
 
 export default async function ToolPage({ params }: { params: Promise<{ slug: string }> }) {

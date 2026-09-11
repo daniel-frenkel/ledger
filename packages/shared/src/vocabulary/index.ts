@@ -327,7 +327,7 @@ export type CrisisResourceId = keyof typeof CRISIS_RESOURCES;
 export const FRAMING = {
   tagline: 'A prediction ledger for behavioral experiments. Not a therapist.',
   notATherapist:
-    'Ledger is a notebook with arithmetic. It is not a therapist, not a treatment, and not a substitute for one. If you are in crisis, use the resources below.',
+    'CourageLoop is a notebook with arithmetic. It is not a therapist, not a treatment, and not a substitute for one. If you are in crisis, use the resources below.',
   frameworkCaveat:
     'The design draws on predictive processing, a framework for how brains use prediction. It is a lens, not a validated treatment. What you are actually doing here is a written behavioral experiment.',
   noStreaks: 'There are no streaks here.',

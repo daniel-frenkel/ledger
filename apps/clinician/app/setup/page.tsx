@@ -8,7 +8,7 @@ import React from 'react';
 import { baa } from '@/lib/baa';
 import { SetupClient } from './setup-client';
 
-export const metadata = { title: 'Set up · Ledger' };
+export const metadata = { title: 'Set up · CourageLoop' };
 
 export default function SetupPage() {
   const { version, draft, body } = baa();
