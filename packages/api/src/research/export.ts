@@ -34,7 +34,7 @@ import { sql } from 'drizzle-orm';
 import { schema, withSystem } from '../db/client.js';
 import { logAccess } from '../audit.js';
 import { newId } from '../ids.js';
-import { ALLOWLIST, allowlistHash, type TableSpec } from './allowlist.js';
+import { ALLOWLIST, allowlistHash, type Column, type TableSpec } from './allowlist.js';
 
 /** Days either side of true. The window is wide enough that a date is not a date. */
 export const SHIFT_DAYS = 180;
@@ -76,10 +76,24 @@ export function shiftDaysFor(userId: string, secret: Buffer): number {
 const shifted = (value: Date, days: number): string =>
   new Date(value.getTime() + days * 86_400_000).toISOString();
 
-/** RFC 4180 enough: quote everything that could be misread, escape the quotes. */
-function csvCell(v: unknown, days: number): string {
+/**
+ * One cell.
+ *
+ * Whether to shift comes from the allowlist's declared type, not from the
+ * runtime value. The driver returns a timestamptz as a Date or as a string
+ * depending on how the query was made, and a check like `v instanceof Date`
+ * stops shifting silently the moment that changes — which is the worst way
+ * this could fail, because it fails by writing real dates.
+ *
+ * RFC 4180 enough otherwise: quote what could be misread, escape the quotes.
+ */
+function csvCell(v: unknown, type: Column['type'], days: number): string {
   if (v === null || v === undefined) return '';
-  if (v instanceof Date) return shifted(v, days);
+  if (type === 'timestamp') {
+    const d = v instanceof Date ? v : new Date(String(v));
+    if (Number.isNaN(d.getTime())) throw new Error('export: a timestamp column held something that is not a date');
+    return shifted(d, days);
+  }
   if (Array.isArray(v)) return `"${v.join('|').replace(/"/g, '""')}"`;
   if (typeof v === 'object') return `"${JSON.stringify(v).replace(/"/g, '""')}"`;
   const s = String(v);
@@ -163,7 +177,7 @@ export async function runExport(opts: ExportOptions): Promise<ExportResult> {
         const days = shiftBy.get(who) ?? 0;
         return [
           names.get(who) ?? '',
-          ...spec.columns.map((c) => csvCell(r[c.name], days)),
+          ...spec.columns.map((c) => csvCell(r[c.name], c.type, days)),
         ].join(',');
       });
       const file = path.join(opts.outDir, `${spec.table}.csv`);
