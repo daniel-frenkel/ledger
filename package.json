@@ -17,7 +17,8 @@
     "dev:web": "pnpm --filter @ledger/web dev",
     "dev:client": "pnpm --filter @ledger/client start",
     "db:generate": "pnpm --filter @ledger/api db:generate",
-    "db:migrate": "pnpm --filter @ledger/api db:migrate"
+    "db:migrate": "pnpm --filter @ledger/api db:migrate",
+    "db:migrate:prod": "pnpm --filter @ledger/api db:migrate:prod"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

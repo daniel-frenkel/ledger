@@ -47,6 +47,15 @@ const schema = z
     /** PEM of a private CA to pin for the database TLS connection. Optional. */
     DATABASE_CA_CERT: z.string().optional(),
 
+    /**
+     * The directory containing `docs/`, for the two things read from disk: the
+     * assistant's corpus and the clinician BAA. Unset in a checkout, where the
+     * workspace root is found by walking up. The container sets `/app`, because
+     * an image has no `pnpm-workspace.yaml` to walk up to — which is the bug
+     * this exists to close. See `src/docs-root.ts`.
+     */
+    DOCS_ROOT: z.string().optional(),
+
     SUPABASE_URL: z.string().url().optional(),
     SUPABASE_JWKS_URL: z.string().url().optional(),
     SUPABASE_JWT_SECRET: z.string().min(16).optional(),

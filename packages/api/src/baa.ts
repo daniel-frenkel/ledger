@@ -8,17 +8,16 @@
  *
  * Read lazily and cached, not at boot. A deployment missing `docs/legal/`
  * should fail the two routes that need the agreement, loudly, rather than
- * refuse to start — the rest of the API has nothing to do with it. Packaging
- * the docs directories with the image is a Prompt 2 item; see docs/data-path.md.
+ * refuse to start — the rest of the API has nothing to do with it. The
+ * directory is located by `src/docs-root.ts`, which the image points at `/app`;
+ * that was the Prompt 2 packaging item and it is done.
  *
  * Parsed by hand rather than with a frontmatter library: the API has never
  * needed one, and "the line beginning `version:` inside the leading `---`
  * block" is not worth a dependency.
  */
 import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { findWorkspaceRoot } from './env.js';
+import { docsFile } from './docs-root.js';
 
 export const BAA_FILE = 'docs/legal/clinician-baa.md';
 
@@ -53,10 +52,8 @@ let cached: BaaDoc | undefined;
 
 export function baaDoc(): BaaDoc {
   if (cached) return cached;
-  const root = findWorkspaceRoot(path.dirname(fileURLToPath(import.meta.url)));
-  if (!root) throw new BaaUnavailableError('cannot find the workspace root');
-  const file = path.join(root, BAA_FILE);
-  if (!fs.existsSync(file)) throw new BaaUnavailableError(`missing ${BAA_FILE}`);
+  const file = docsFile('legal', 'clinician-baa.md');
+  if (!file) throw new BaaUnavailableError(`missing ${BAA_FILE}`);
 
   const front = parseFrontmatter(fs.readFileSync(file, 'utf8'));
   const version = front['version'];
