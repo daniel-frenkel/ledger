@@ -90,5 +90,15 @@ async function send(to: string, message: Composed): Promise<void> {
   }
 }
 
-/** The sign-in link. The only message this system sends today. */
-export const sendSignInLink = (to: string, link: string): Promise<void> => send(to, signInEmail(link));
+/**
+ * The sign-in link email. The only message this system sends today.
+ *
+ * Named for the *transport*, not for the concept. `@ledger/shared` has a
+ * `sendSignInLink` that asks Identity Platform to compose and send the mail
+ * itself — a different layer, a different credential, and the thing this
+ * replaced. Two functions of the same name on either side of that boundary is
+ * a trap for exactly the audit that would come looking for it: a grep lands on
+ * one, reads like the other, and the wrong conclusion is the plausible one.
+ */
+export const deliverSignInLinkEmail = (to: string, link: string): Promise<void> =>
+  send(to, signInEmail(link));
