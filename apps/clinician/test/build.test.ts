@@ -20,6 +20,24 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const APP = path.join(here, '..', '.next', 'server', 'app');
 const built = fs.existsSync(APP);
 
+/**
+ * Skipping is a local convenience and a CI failure.
+ *
+ * CI builds this app before running its tests, so a missing `.next` there is a
+ * broken pipeline rather than someone who has not run a build yet — and the
+ * six assertions below are the only thing checking that every route still
+ * prerenders. Vitest reports a skip as one number in a summary line, so a
+ * pipeline that quietly stopped building would drop all six and still be
+ * green. That is the same shape as the image bugs in Prompt 0's standing rule:
+ * correct where it runs, silently absent where it matters.
+ */
+if (!built && process.env['CI']) {
+  throw new Error(
+    'apps/clinician/.next/server/app is missing. CI must build the clinician app before its tests; ' +
+      'these prerender assertions cannot be skipped there.',
+  );
+}
+
 /** The routes every published document should have produced. */
 const documentRoutes = (): string[] => [...new Set(sources().flatMap((d) => (d.href ? [d.href] : [])))].sort();
 
