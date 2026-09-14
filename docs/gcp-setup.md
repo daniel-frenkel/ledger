@@ -58,6 +58,37 @@ not done rather than re-derived.
 Steps 1 through 5 and step 7 are done. **Step 6 is deferred to Prompt 2** for
 the reason written there. Step 8 is the standing list of what is still blocked.
 
+### The organisation contains eight projects. We use one.
+
+Observed 14 September 2026. Recorded so that a future reader who runs
+`gcloud projects list` and finds seven unfamiliar names does not have to work
+out which one matters.
+
+| Project ID | Name | |
+|---|---|---|
+| `courageloop-prod` | CourageLoop | **ours — the only one in scope** |
+| `cs-project-0kqm4lcr` | central-logging-monitoring | wizard output |
+| `cs-project-1c4rr85f` | nonprod | wizard output |
+| `cs-project-7cyrxkk7` | prod | wizard output |
+| `cs-project-vynzfwnh` | development | wizard output |
+| `google-mpf-5v7vrftg6mkd` | Non-Production-mp | wizard output |
+| `google-mpf-ca4o3gdkz7ip` | Development-mp | wizard output |
+| `google-mpf-dh4y1ovr7z8j` | Production-mp | wizard output |
+
+**`courageloop-prod` is the only project in scope for everything in this
+document and in `docs/deploy.md`.** Every `gcloud` command here names it
+explicitly, and none of them touches the other seven.
+
+The other seven are Google Cloud Setup wizard output — the same provenance as
+the log sink in §7a, and the same category: infrastructure nobody designed and
+nothing here documents. **The difference is that there is no evidence anything
+runs in them.** So this is an inventory line and not a task: nothing is being
+investigated, nothing is being cleaned up, and no gate is being added.
+
+It becomes a real item only if one of them is spending money. Billing by
+project is being checked separately; if that turns something up it gets raised
+then, on evidence.
+
 ---
 
 ## 1. Enable the APIs
@@ -310,6 +341,69 @@ skipped.
    address; what it cannot do is send from `courageloop.com`, take
    responsibility for deliverability, or let us write the message body. The
    beta needs all three.
+
+## 7a. The org-level log sink — gone, and not repaired
+
+**Resolved, 14 September 2026.** The Google Cloud Setup wizard created an
+org-level sink, `org-level-logsink-611109317176`, exporting to a bucket in a
+project it also created (`cs-project-0kqm4lcr`). It was failing with
+`log_bucket_permission_denied`.
+
+**It is already gone.** `gcloud logging sinks list` at both org and project
+level returns only `_Required` and `_Default` — the built-ins — so the
+Foundation Builder cleanup had removed it before anyone looked. Nothing was
+done to it here, and nothing needs to be.
+
+**The failure notification postdated the fix**, which is why it read as live.
+Worth knowing for the next one: an error email describes state at the time of
+the failure, not current state, so the first step is to look rather than to
+act on the message.
+
+The decision below stands as a decision — if it had still existed, it would
+have been deleted rather than repaired, and the reasoning is what makes that
+the right answer for the next wizard-created thing too.
+
+Three reasons it would not have been worth repairing, and the first is the one
+that generalises:
+
+**An undocumented log destination in a wizard-created project is exactly the
+thing the covered-and-GA rule exists to catch.** Nobody chose that project,
+nobody can say what is in the bucket, and it is not on any list in this
+repository. A destination for logs that nothing here documents is a
+destination nobody is accountable for.
+
+**Repairing it would bill org-wide log storage for logs nobody reads.** The
+sink was not created to answer a question; it was created by a wizard.
+
+**No audit trail is lost.** Per-project `_Required` buckets retain Admin
+Activity and System Event audit logs for **400 days**, and those buckets are
+non-configurable and undeletable — retention is not something this decision
+can reduce. The HIPAA audit obligation is met by the in-app `access_log` from
+migration 0008 (gate B1) and by `_Required`, neither of which depends on log
+aggregation.
+
+**This is not a gate**, and the register was checked before saying so: B1 is
+the in-app audit table, B9 is the no-PHI check against Cloud Run's logging,
+and nothing else in `go-live-gate.md` covers aggregation.
+
+### If centralized aggregation is wanted later, it gets designed
+
+Not inherited. Three things have to be decided before a sink exists, not
+after:
+
+- **Retention period**, chosen rather than defaulted.
+- **Who can read it** — a log bucket is a copy of production behaviour with a
+  different access-control list from production.
+- **Exclusion filters**, written before the first log arrives.
+
+**Tie this to the no-PHI-in-logs rule, because an aggregation bucket is where
+an exception to that rule would first become invisible.** `phi-logs.test.ts`
+asserts what the application writes, and gate B9 checks it once on the real
+host. Neither of them can see a bucket that some other project is copying logs
+into. A sink that aggregates across services is the one place a PHI leak could
+sit, retained, in a project nobody is looking at — which is the same shape as
+every other finding in this document: the failure is silent and surfaces
+somewhere that does not point back at it.
 
 ## 8. What is still blocked, and on what
 
