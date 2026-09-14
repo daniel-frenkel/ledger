@@ -1,0 +1,44 @@
+{
+  "$comment": [
+    "The inventory of tests allowed to skip, and why.",
+    "",
+    "A skipped test is a test that is not running. '94 passed, 1 skipped' and",
+    "'88 passed, 7 skipped' are nearly indistinguishable in a summary line that",
+    "somebody is scanning at speed, so a suite can quietly stop checking things",
+    "while every run stays green. That has already happened once here: a stale",
+    ".next made six prerender assertions vanish and the run still reported",
+    "success.",
+    "",
+    "So CI asserts the skip count per package against this file, not only the",
+    "pass count. A skip appearing OR disappearing fails until someone updates",
+    "the inventory — which is the point: the update is where the thinking",
+    "happens. Disappearing matters as much as appearing, because a skip that",
+    "stops skipping usually means the condition guarding it changed.",
+    "",
+    "scripts/check-skips.mjs is the checker. See Prompt 0 in docs/code-prompts.md."
+  ],
+
+  "packages": {
+    "@ledger/shared": {
+      "expected": 0,
+      "allowed": []
+    },
+    "@ledger/web": {
+      "expected": 0,
+      "allowed": []
+    },
+    "@ledger/clinician": {
+      "expected": 1,
+      "allowed": [
+        {
+          "name": "build output is absent — run `pnpm --filter @ledger/clinician build` to check prerendering",
+          "why": "The inverse guard in test/build.test.ts. Exactly one of the two blocks in that file runs: with a build present the six prerender assertions run and this one skips; with no build it reports the absence and the six skip. In CI the app is always built first, so this is the one that skips — and build.test.ts throws rather than skips if CI has no build, so the six can never be the skipped half here."
+        }
+      ]
+    },
+    "@ledger/api": {
+      "expected": 0,
+      "allowed": []
+    }
+  }
+}

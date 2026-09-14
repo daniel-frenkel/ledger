@@ -38,3 +38,8 @@ jobs:
       - run: pnpm db:migrate
       - run: pnpm --filter @ledger/api test
       - run: pnpm --filter @ledger/api test:rls
+      # A skipped test is a test that is not running, and "94 passed, 1 skipped"
+      # reads like success. Assert the skip count per package against
+      # test-skips.json, so a skip appearing OR disappearing fails until it is
+      # recorded. Runs last: it reads the JSON reports the suites above wrote.
+      - run: node scripts/check-skips.mjs
