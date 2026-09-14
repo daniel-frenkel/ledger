@@ -1,0 +1,15 @@
+# Deliberately narrow.
+#
+# There is no `* text=auto` here. Adding one would renormalise line endings
+# across the whole repository in a single commit, which would bury every real
+# change in the same diff and make `git blame` useless on every file it touched.
+# The CRLF warnings on this machine are cosmetic and stay.
+
+# Compliance evidence is binary and must never be line-ending converted:
+# a converted PNG is a corrupt PNG, and these files exist to be opened years
+# from now by someone checking whether an agreement was really accepted.
+docs/compliance/** binary
+
+*.png binary
+*.jpg binary
+*.pdf binary
