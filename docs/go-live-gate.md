@@ -2,6 +2,42 @@
 
 **Status:** the beta will include real clients. This document is the list of conditions, in order, and each one is either done or it isn't. Nothing here is legal advice; items marked ⚖ need a lawyer or the counsel a professional-liability insurer provides. The author is the vendor in this arrangement, not the treating clinician: under HIPAA, Loadbearing is a **business associate** of every clinician who uses it with a client, and every one of the subprocessors below is a business associate of Loadbearing.
 
+## Agreements in force
+
+Two BAAs are accepted. Each names the file that evidences it, per the standing
+rule that a gate closes on evidence and not on a sentence claiming the evidence
+exists.
+
+### Google Cloud — accepted 11 September 2026
+
+By daniel@courageloop.com, scoped to `courageloop-prod`.
+Evidence: [`compliance/courageloop-gcp-baa-accepted-2026-09-11.png`](compliance/courageloop-gcp-baa-accepted-2026-09-11.png)
+
+Covers: **Identity Platform, Cloud SQL, Cloud Run, Secret Manager, Cloud Build,
+Artifact Registry, Cloud NAT, VPC, Cloud Load Balancing, Cloud DNS, Cloud
+Armor.**
+
+That list settles two things that were open. **Cloud NAT and VPC are covered**,
+which was the outstanding check on the A4 IP-allowlist option — it was flagged
+as unresolved and is now resolved. **Cloud Load Balancing is covered**, which
+is what the A10 load balancer runs on.
+
+### Google Workspace / Cloud Identity — accepted 14 September 2026
+
+By daniel@courageloop.com.
+Evidence: [`compliance/courageloop-workspace-baa-accepted-2026-09-14.png`](compliance/courageloop-workspace-baa-accepted-2026-09-14.png)
+
+Covers **Gmail**, which is what makes the A4 SMTP relay path available at all.
+
+**An ongoing obligation, not a one-time step.** The Workspace BAA covers only
+services on Google's HIPAA Included Functionality list, and **third-party
+Marketplace add-ons are explicitly outside it**. So a Workspace-adjacent
+integration gets the same covered-and-GA check as any Google Cloud service —
+the fact that it installs into a covered product does not make it covered. It
+is the same rule as Prompt 0's, applied to a place it is easy not to look.
+
+---
+
 ## Hostnames of record
 
 Settled with the rename to CourageLoop (Prompt 15). Every placeholder elsewhere resolves to one of these.
@@ -18,7 +54,7 @@ The API's CORS allowlist is exactly these three origins, from `CORS_ORIGINS`, an
 
 | # | Party | What | Status |
 |---|---|---|---|
-| A1 ⚖ | Loadbearing ↔ each clinician | **A BAA signed at clinician signup**, before any invite can be created. Template from counsel; click-through acceptance recorded with version and timestamp on the clinician's user row. The invite route refuses if `baa_accepted_version` is null. | **mechanism done** — migration 0008 and the acceptance flow; `docs/legal/clinician-baa.md` is a DRAFT placeholder and still needs counsel's template |
+| A1 ⚖ | Loadbearing ↔ each clinician | **A BAA signed at clinician signup**, before any invite can be created. Template from counsel; click-through acceptance recorded with version and timestamp on the clinician's user row. The invite route refuses if `baa_accepted_version` is null. **Part of the first-invite cluster below.** | **mechanism done, document outstanding** — migration 0008 and the acceptance flow work; `docs/legal/clinician-baa.md` is a DRAFT placeholder. **Owner: Daniel. Completion condition: requires health care attorney review.** Not a Code item — no legal text is to be drafted here, and the placeholder says so at the top of itself. |
 | A2 | Database and auth | **Supabase's HIPAA add-on (~$599/mo) is out of reach for the beta, so production moves off Supabase.** Database: **Cloud SQL for PostgreSQL** in the same Google project as Cloud Run — covered by Google's BAA, which is free and self-service in the console. The beta starts on a shared-core instance at ≈$12/mo and moves to ≈$52/mo before any real client's data — see A8. It is plain Postgres: the `ledger_api` role, RLS, and the migrations apply unchanged. Auth: **Google Cloud Identity Platform** (verify it is on Google's current HIPAA covered-services list before relying on it), free at beta scale, email sign-in plus TOTP for B2; the API already verifies JWTs by JWKS URL, so this is config plus the client sign-in screen. Supabase stays as the free dev/CI database only. | **code done, instance not created** — Prompt 11: both providers behind one seam, `AUTH_PROVIDER` picks one; BAA accepted 11 Sept 2026 for `courageloop-prod`; **Instance created 14 Sept 2026** (private IP only, `db-f1-micro`, PITR and deletion protection on). **Stays open**: the verification cannot run from outside the VPC — the Auth Proxy must be on a resource in the instance's VPC, and `constraints/sql.restrictPublicIp` is enforced org-wide and stays enforced — so it runs as a Cloud Run job in Prompt 2. CI already proves the schema on vanilla Postgres; this closes on Google's build. See `docs/gcp-setup.md` §6. |
 | A3 | API hosting | A host that signs a BAA. Render's free and standard tiers do not; proposal 01 already required portability to **Google Cloud Run**, and Google's BAA covers Cloud Run. Prompt 2 changes target from Render to Cloud Run. | **procedure written 14 Sept 2026, not executed** — `docs/deploy.md`: image, service account, Secret Manager bindings, and the org-policy exception public ingress needs. Closes on a deployed service answering /health, not on this document. |
 | A4 | Transactional email | The sign-in code email carries only a six-digit code, but the recipient list at the provider identifies people receiving mental-health care. Treat it as PHI: use a provider that signs a BAA (AWS SES under the AWS BAA, or Mailgun or Twilio SendGrid on their eligible plans — verify current terms). Gmail SMTP is test-only and must be gone. **Identity Platform is a covered service and its built-in sender is permitted under the BAA** — the requirement here is not a compliance one. It is that the sender must be an address on `courageloop.com`, that deliverability to real inboxes has to be someone's responsibility, and that the message body has to be ours to write: a sign-in email is the first thing a client ever sees from this, and it should say what it is. Configure a custom SMTP sender on the tenant. See **the first-invite cluster** below. | not started — still required after Prompt 11, for those reasons |
@@ -30,12 +66,16 @@ The API's CORS allowlist is exactly these three origins, from `CORS_ORIGINS`, an
 | A10 | Public hostnames | **The two apps are served from `courageloop.com` and `app.courageloop.com` behind the global external Application Load Balancer, with an SSL policy pinned to a TLS 1.2 minimum, before the first invite link is sent to anyone outside the build.** Until then they are on their generated `*.run.app` URLs, which are GA and free and which this project cannot put a TLS floor on — Google publishes no minimum version for them and no SSL policy can be attached. Cloud Run domain mappings are **not** the answer: they are a Pre-GA offering, and Google's HIPAA guidance says not to use Pre-GA offerings with PHI. The full procedure is written out in `docs/deploy.md` §8 to be executed at the gate. **Closes on the TLS 1.1 handshake being refused on both hostnames** — not on the policy being attached, which is a different claim. | not started |
 | — | Sentry | Not enabled. Stays off in beta. If enabled later, Sentry signs BAAs on its business tier and the PII scrubbing already specified is required. | off |
 
-### The first-invite cluster — A4, A8, A10
+### The first-invite cluster — A1, A4, A8, A10
 
-These three share a trigger, and it is not "the first real client's data". It
-is earlier and more precise: **the first invite link sent to anyone outside the
+These four share a trigger, and it is not "the first real client's data". It is
+earlier and more precise: **the first invite link sent to anyone outside the
 build.**
 
+- **A1** — the BAA CourageLoop offers the clinician, reviewed by a health care
+  attorney. The mechanism is built and the document is a placeholder; a
+  clinician cannot meaningfully accept text nobody has reviewed. Owned by
+  Daniel, not by Code.
 - **A4** — a BAA-signing SMTP sender, so the invitation arrives from
   `courageloop.com` and not from a Google default.
 - **A8** — a dedicated-core database with an SLA, so the thing on the other end
@@ -44,16 +84,22 @@ build.**
   so the link is to `app.courageloop.com` and not to a generated `*.run.app`
   address.
 
+A1 belongs here rather than in a gate of its own: it is the same trigger as the
+other three, and it already existed as A1 before the cluster did. A second row
+for the same obligation would be worse than none — two gates for one thing is
+how one of them gets closed while the other quietly stays open.
+
 The reason the trigger is the invite and not the data: a client receiving a
 `run.app` URL from their therapist, and being asked to enter personal material
 into whatever opens, is being taught to trust a link shape that the rest of
 this product spends its time teaching them to distrust. The first time someone
 outside the build is asked to trust this, all three have to be true.
 
-**None of the three is independently skippable, and any one of them open holds
-the other two.** Two out of three is not two-thirds of the way there; it is a
-sound domain serving an app on an unsupported tier, or a hardened endpoint
-whose invitation lands in spam.
+**None of the four is independently skippable, and any one of them open holds
+the other three.** Three out of four is not three-quarters of the way there; it
+is a sound domain serving an app on an unsupported tier, or a hardened endpoint
+whose invitation lands in spam, or a clinician clicking Accept on text no
+lawyer has read.
 
 ## B. Controls the Security Rule expects — the ones the app does not yet have
 
@@ -87,7 +133,7 @@ A7 → A1 template → A2 and A3 together (Prompt 11 moves auth and the database
 
 A9 is not in that sequence because it is not a step in it: the key is backed up before the secret version is created, which is before anything else on this list can run.
 
-A4, A8 and A10 are the cluster above and fire together at the first invite.
+A1, A4, A8 and A10 are the cluster above and fire together at the first invite.
 
 A8 sits where it does deliberately: it is the last thing before a real client's data exists, and it is the only item on this list that gets cheaper to do the earlier it is done.
 
