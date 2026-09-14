@@ -49,7 +49,7 @@ beforeEach(async () => {
   deleteUser.mockResolvedValue(undefined);
   // Only deleteUser is exercised here; the assurance level is the auth
   // plugin's business and has its own tests in audit.test.ts.
-  setAuthAdmin({ deleteUser, assuranceLevel: () => 'aal2' });
+  setAuthAdmin({ deleteUser, assuranceLevel: () => 'aal2', signInLink: () => Promise.reject(new Error('not used in this suite')) });
   sink = new LogSink();
   app = await buildApp(sink);
   await truncateAll();

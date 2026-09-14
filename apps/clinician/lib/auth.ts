@@ -20,7 +20,6 @@ import {
   finalizeTotpEnrollment,
   isExpired,
   refresh,
-  sendSignInLink,
   startTotpEnrollment,
   type IdentityPlatformConfig,
   type MfaChallenge,
@@ -194,8 +193,15 @@ class IdentityPlatformAuth implements ClinicianAuth {
     for (const cb of this.listeners) cb();
   }
 
+  /** Asks our API to send the link, not Identity Platform. See apps/web. */
   async begin(email: string): Promise<SecondStep> {
-    await sendSignInLink(this.cfg, email);
+    const res = await fetch(`${API_URL}/v1/auth/sign-in-link`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, app: 'clinician' }),
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`sign-in link request failed (${res.status})`);
     try {
       sessionStorage.setItem(PENDING_EMAIL_KEY, email);
     } catch {

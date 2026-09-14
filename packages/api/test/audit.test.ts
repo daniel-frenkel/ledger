@@ -224,6 +224,7 @@ describe('clinician MFA', () => {
         seen.push(claims);
         return 'aal2';
       },
+      signInLink: () => Promise.reject(new Error('not used in this suite')),
     });
     // AUTH_TEST_MODE short-circuits token verification, so the seam is not
     // called here; what this asserts is that the interface carries the method

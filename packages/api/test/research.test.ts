@@ -37,7 +37,11 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  setAuthAdmin({ deleteUser: async () => {}, assuranceLevel: () => 'aal2' });
+  setAuthAdmin({
+    deleteUser: async () => {},
+    assuranceLevel: () => 'aal2',
+    signInLink: () => Promise.reject(new Error('not used in this suite')),
+  });
   app = await buildApp();
   await truncateAll();
   await admin.query(`INSERT INTO users (id, role) VALUES ($1,'client'), ($2,'client'), ($3,'clinician')`, [

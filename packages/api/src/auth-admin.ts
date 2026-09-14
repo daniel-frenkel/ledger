@@ -45,6 +45,22 @@ export interface AuthAdmin {
    * what a bearer token proves unless something says otherwise.
    */
   assuranceLevel(jwt: VerifiedClaims): AssuranceLevel;
+
+  /**
+   * Mint a sign-in link **without sending it**, so that our own code composes
+   * and sends the message.
+   *
+   * This is what gate A4 turns on. Left to the provider, the body is console
+   * state: editable by anyone with console access, interpolating the project
+   * name, and impossible to assert against the "no PHI in email bodies" rule
+   * from inside this repository. Generating the link and sending it ourselves
+   * makes the copy a file with a test on it.
+   *
+   * Providers that cannot do this throw. Supabase is one: its OTP endpoint
+   * sends, and there is no variant that returns the code instead — which is
+   * why Supabase stays the development provider and not a production one.
+   */
+  signInLink(email: string, continueUrl: string): Promise<string>;
 }
 
 /** The provider could not be reached or refused. Carries no response body. */
@@ -75,6 +91,16 @@ class SupabaseAuthAdmin implements AuthAdmin {
    */
   assuranceLevel(jwt: VerifiedClaims): AssuranceLevel {
     return jwt['aal'] === 'aal2' ? 'aal2' : 'aal1';
+  }
+
+  /**
+   * Supabase's OTP endpoint sends the mail itself and has no variant that
+   * returns the link instead, so the body would be Supabase's template. That
+   * is acceptable for development, where the only recipient is a developer,
+   * and is why this throws rather than degrading quietly.
+   */
+  signInLink(): Promise<string> {
+    return Promise.reject(new AuthAdminError('supabase cannot mint a link without sending it'));
   }
 
   async deleteUser(userId: string): Promise<void> {
@@ -152,6 +178,40 @@ class IdentityPlatformAuthAdmin implements AuthAdmin {
     if (!body.access_token) throw new AuthAdminError('metadata server returned no token');
     this.token = { value: body.access_token, expiresAt: now + (body.expires_in ?? 3600) * 1000 };
     return this.token.value;
+  }
+
+  /**
+   * `returnOobLink: true` is the admin-only variant: Identity Platform mints
+   * the code and hands back the link **instead of** emailing it. It needs the
+   * service-account token rather than the browser API key, which is also what
+   * stops this being callable by anyone holding the public key.
+   */
+  async signInLink(email: string, continueUrl: string): Promise<string> {
+    const token = await this.accessToken();
+    let res: Response;
+    try {
+      res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          'x-goog-user-project': this.projectId,
+        },
+        body: JSON.stringify({
+          requestType: 'EMAIL_SIGNIN',
+          email,
+          continueUrl,
+          canHandleCodeInApp: true,
+          returnOobLink: true,
+        }),
+      });
+    } catch (err) {
+      throw new AuthAdminError(`unreachable (${(err as Error).name})`);
+    }
+    if (!res.ok) throw new AuthAdminError(`status ${res.status}`);
+    const body = (await res.json()) as { oobLink?: string };
+    if (!body.oobLink) throw new AuthAdminError('no link returned');
+    return body.oobLink;
   }
 
   async deleteUser(userId: string): Promise<void> {

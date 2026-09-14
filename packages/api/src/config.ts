@@ -48,6 +48,31 @@ const schema = z
     DATABASE_CA_CERT: z.string().optional(),
 
     /**
+     * Outbound mail, through the Google Workspace SMTP relay (go-live gate A4).
+     *
+     * Ships off. With `EMAIL_ENABLED` unset nothing is sent, which is correct
+     * until the relay has a static egress IP to allowlist — and a relay saved
+     * with no authentication method at all is an open relay for the domain, so
+     * "not yet configured" must mean "does not send" rather than "sends
+     * unauthenticated".
+     *
+     * There is no password here and there is not meant to be. The relay
+     * accepts mail from the deployment's egress IP and nowhere else.
+     */
+    EMAIL_ENABLED: bool.default('false'),
+    SMTP_HOST: z.string().default('smtp-relay.gmail.com'),
+    SMTP_PORT: z.coerce.number().int().positive().default(587),
+    /** The envelope sender. Must be an address in a domain the relay owns. */
+    MAIL_FROM: z.string().optional(),
+    /**
+     * Where each app is served, so a sign-in link lands back on the origin
+     * that asked for it. Both must be authorised domains on the Identity
+     * Platform tenant, which is what stops a stolen link being redirected.
+     */
+    WEB_URL: z.string().url().default('http://localhost:5173'),
+    CLINICIAN_URL: z.string().url().default('http://localhost:3000'),
+
+    /**
      * The directory containing `docs/`, for the two things read from disk: the
      * assistant's corpus and the clinician BAA. Unset in a checkout, where the
      * workspace root is found by walking up. The container sets `/app`, because
@@ -183,6 +208,11 @@ const schema = z
           message: 'each origin must be scheme://host[:port] with no trailing slash or path',
         });
       }
+    }
+    // Sending with no from-address would put a Google default in front of a
+    // client, which is the thing gate A4 exists to prevent.
+    if (c.EMAIL_ENABLED && !c.MAIL_FROM) {
+      ctx.addIssue({ code: 'custom', path: ['MAIL_FROM'], message: 'required when EMAIL_ENABLED is set' });
     }
     const key = Buffer.from(c.FIELD_ENCRYPTION_KEY, 'base64');
     if (key.length !== 32) {
