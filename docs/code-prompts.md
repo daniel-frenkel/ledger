@@ -35,11 +35,13 @@ Standing rules. These are not negotiable and you do not need to ask about them:
 - **Before creating a gate I name, check the existing register.** If the obligation is already tracked under another id, say so and enrich that gate instead of creating a second one — and **tell me I asked for a duplicate** rather than quietly doing the right thing. Two gates for one obligation is how one of them gets closed while the other quietly stays open. This applies to the same class generally: when I name a section, a file or an id and the content does not fit it, place it correctly and say that I named the wrong one. A report that says "applied as instructed" when the instruction was wrong is worth less than one that says "no, and here is why", and it does not need softening.
 - **A gate closes on evidence that the procedure ran, never on the existence of the procedure.** If the only artifact is a document, the gate state is "procedure written, not executed" with the date the procedure was written.
 - **A skipped test is a test that is not running, and CI asserts the skip count, not only the pass count.** `test-skips.json` is the inventory: how many skips each package may have, which ones, and why each is allowed. `scripts/check-skips.mjs` fails when a skip appears *or* disappears, because both are changes to what this repository checks. Neither is necessarily a bug; both are necessarily a decision, and it belongs in the inventory rather than in whoever reads the summary line that week. A pass count cannot catch this — six tests turning into skips drops the pass count by six and nobody knows what it should have been.
+- **Open every report by naming the instruction you are answering**, on its own line: *Responding to: the ruling on Cloud NAT and Serverless VPC Access.* Messages are relayed, so they cross — and when they do, whoever reads the report cannot always tell which instruction reached you first. One line at the top makes a crossed message visible in the first sentence instead of the last, which is where it has been costing a round trip each time.
 - Work on a branch named for the task. Never commit to main. Never commit .env. Commit messages: what and why, no fluff.
 - Before you say you're done: `pnpm -r typecheck`, `pnpm -r test`, and (if a Postgres is available) `pnpm --filter @ledger/api test:rls` all pass. If you can't run something, say so explicitly.
 
 When you finish, end with a report in this exact shape so it can be relayed:
 
+RESPONDING TO: <one line naming the instruction this answers>
 DONE: <one line>
 CHANGED: <files or areas>
 TESTS: <counts, and anything skipped and why>
