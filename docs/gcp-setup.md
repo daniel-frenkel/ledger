@@ -213,6 +213,25 @@ skipped.
    Invoke-RestMethod -Method Patch -Uri $uri -Headers $headers -ContentType 'application/json' -Body $body
    ```
 
+   **If this returns 403 `PERMISSION_DENIED` / `SERVICE_DISABLED`, read the
+   next paragraph before doing anything.** The error names project
+   `32555940559` — gcloud's own shared client project, which appears nowhere in
+   our setup — and reads as "the Identity Toolkit API is off". It is not off;
+   step 1 enabled it. What is missing is a *quota project* attributed to the
+   call, which is what the `X-Goog-User-Project` header above supplies. That
+   header is not always sufficient on its own: Identity Toolkit does not accept
+   end-user credentials from the Cloud SDK without a quota project configured,
+   and the caller needs `serviceusage.services.use` on it. If the header alone
+   does not clear it:
+
+   ```powershell
+   gcloud config set billing/quota_project courageloop-prod
+   ```
+
+   **Do not enable an API in response to that error.** The project it names is
+   not ours and the service it names is already on. The same applies to the
+   `GET` below and to the one in `go-live-gate.md`.
+
    **Both `state` fields are required, and this is the trap.** The top-level
    `mfa.state` governs all multi-factor authentication including TOTP. Set only
    the provider config and TOTP stays inert — while the response comes back

@@ -120,16 +120,17 @@ that is how anyone signs in for the first time. "Disable what can fire" has a
 floor, and the floor is the product. So the residual is real and the question
 is what reduces it.
 
-**Four steps, three of which are actions.**
+**Four steps. Step 1 is done and evidenced; steps 2 and 3 remain open and are
+Daniel's; step 4 is the acceptance that follows.**
 
-1. **Verify `emailPrivacyConfig.enableImprovedEmailPrivacy`.** Enumeration
-   protection removes the distinguishing error responses from `PASSWORD_RESET`
-   and `VERIFY_AND_CHANGE_EMAIL`, which is exactly what turns a send endpoint
-   into an *existence oracle* — and an existence oracle on a mental health
-   product is a disclosure question, not a spam one. Google enables it by
-   default for projects created on or after 15 September 2023, and
-   `courageloop-prod` was created 11 September 2026, so it is very likely
-   already on. **Likely is not evidence.** Read it:
+1. **`emailPrivacyConfig.enableImprovedEmailPrivacy` — VERIFIED ON,
+   14 September 2026.** Enumeration protection removes the distinguishing
+   error responses from `PASSWORD_RESET` and `VERIFY_AND_CHANGE_EMAIL`, which
+   is exactly what turns a send endpoint into an *existence oracle* — and an
+   existence oracle on a mental health product is a disclosure question, not a
+   spam one.
+
+   Read, not assumed. The command:
 
    ```powershell
    $project = 'courageloop-prod'
@@ -139,21 +140,58 @@ is what reduces it.
      ConvertTo-Json -Depth 10
    ```
 
-   If it is on, record it here as verified with the date and the output. If it
-   is off, turn it on — that one is not a judgment call.
+   The three fields that matter, verbatim:
 
-2. **Set the project's public-facing name to CourageLoop**, so the default
+   ```
+   emailPrivacyConfig.enableImprovedEmailPrivacy : true
+   signIn.email.enabled                          : true
+   signIn.email.passwordRequired                 : absent
+   ```
+
+   **`passwordRequired` absent is a value, not an omission.** Proto3 JSON
+   omits default values, so absent means `false` — and `false` is why
+   email-link sign-in works at all. Anyone re-reading this in a year will
+   otherwise see a missing field and conclude either that it is unset or that
+   the check was incomplete. It is neither: the field was read, and its value
+   is false.
+
+   So the oracle is closed. A caller can still cause a send; they cannot learn
+   whether the address is registered.
+
+   > **If that GET returns 403 `PERMISSION_DENIED` / `SERVICE_DISABLED`, the
+   > error is misdirecting you.** It names project `32555940559`, which is
+   > gcloud's own shared client project and appears nowhere in our setup, and
+   > it reads as "the Identity Toolkit API is off". The API is enabled
+   > (`gcp-setup.md` §1); what is missing is a *quota project* attributed to
+   > the call.
+   >
+   > The `X-Goog-User-Project` header above is the fix and is already in the
+   > command. It is not always sufficient on its own: Identity Toolkit does not
+   > accept end-user credentials from the Cloud SDK without a quota project
+   > configured, and the caller needs `serviceusage.services.use` on it. If the
+   > header alone does not clear it:
+   >
+   > ```powershell
+   > gcloud config set billing/quota_project courageloop-prod
+   > ```
+   >
+   > **Do not go and enable an API in response to this error.** The project
+   > number in the message is not ours, and the thing it names is already on.
+
+
+2. **NOT DONE — set the project's public-facing name to CourageLoop**, so the default
    template stops naming `courageloop-prod`. Identity Platform → Settings.
 
-3. **Add HTTP referrer restrictions to the browser API key**, limited to
+3. **NOT DONE — add HTTP referrer restrictions to the browser API key**, limited to
    `courageloop.com` and `app.courageloop.com`. **Partial, and labelled that
    way deliberately:** referrers are set by the client and are trivially
    spoofed. This raises the cost of casual abuse and does **nothing** against a
    determined caller. It is not a control and should not be written up as one.
 
-4. **Then accept the residual.** Someone holding the public key can cause a
-   sign-in or reset message to be sent to an address they already know. They
-   cannot learn whether that address is registered, once step 1 is confirmed.
+4. **Accept the residual.** Someone holding the public key can cause a
+   sign-in or reset message to be sent to an address they already know. **They
+   cannot learn whether that address is registered** — step 1 is verified, so
+   this is settled rather than conditional.
 
 **The mitigating fact, recorded in the same place as the risk** so the two are
 read together: those messages go out **from Google's built-in sender, not from
