@@ -1,5 +1,13 @@
 # The pseudonym secret: per-run or per-study?
 
+> **PARKED — 14 September 2026.** Do not act on this, and do not revisit it
+> without a ruling. It is recorded so the question is not lost, not so that
+> somebody answers it.
+>
+> **One live constraint while it is open:** nothing new in the codebase may
+> take a dependency on the secret being per-run. A change that would make this
+> decision harder to reverse is a change to stop and raise, not to make.
+
 **Status: a question, not a decision.** Nothing is being changed. This is
 written down because the current behaviour was a consequence rather than a
 choice, and the consequence is large enough that somebody should choose it on
