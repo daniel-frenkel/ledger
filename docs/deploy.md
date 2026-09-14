@@ -640,6 +640,15 @@ gcloud logging read \
 the report — an empty result is the evidence, and it only means something
 alongside the query that produced it. Then delete the prediction.
 
+**What this check cannot see.** It queries Cloud Run's own logs. It cannot see
+a log *sink* copying those logs somewhere else, and neither can
+`phi-logs.test.ts`, which only knows what the application wrote. The org-level
+sink that existed here was deleted rather than repaired for that reason among
+others — `gcp-setup.md` §7a. If centralized aggregation is ever added, its
+retention, its readers and its exclusion filters are decided before it exists,
+because an aggregation bucket is where an exception to the no-PHI rule would
+first become invisible.
+
 ## 10. CI deploys — Workload Identity Federation
 
 `constraints/iam.disableServiceAccountKeyCreation` is enforced and stays

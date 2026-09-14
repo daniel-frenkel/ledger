@@ -311,6 +311,55 @@ skipped.
    responsibility for deliverability, or let us write the message body. The
    beta needs all three.
 
+## 7a. The org-level log sink — deleted, not repaired
+
+**Decision, 14 September 2026.** The Google Cloud Setup wizard created an
+org-level sink, `org-level-logsink-611109317176`, exporting to a bucket in a
+project it also created (`cs-project-0kqm4lcr`). Since the Foundation Builder
+cleanup it has been failing with `log_bucket_permission_denied`. **It is being
+deleted rather than repaired.**
+
+Three reasons, and the first is the one that generalises:
+
+**An undocumented log destination in a wizard-created project is exactly the
+thing the covered-and-GA rule exists to catch.** Nobody chose that project,
+nobody can say what is in the bucket, and it is not on any list in this
+repository. A destination for logs that nothing here documents is a
+destination nobody is accountable for.
+
+**Repairing it would bill org-wide log storage for logs nobody reads.** The
+sink was not created to answer a question; it was created by a wizard.
+
+**No audit trail is lost.** Per-project `_Required` buckets retain Admin
+Activity and System Event audit logs for **400 days**, and those buckets are
+non-configurable and undeletable — retention is not something this decision
+can reduce. The HIPAA audit obligation is met by the in-app `access_log` from
+migration 0008 (gate B1) and by `_Required`, neither of which depends on log
+aggregation.
+
+**This is not a gate**, and the register was checked before saying so: B1 is
+the in-app audit table, B9 is the no-PHI check against Cloud Run's logging,
+and nothing else in `go-live-gate.md` covers aggregation.
+
+### If centralized aggregation is wanted later, it gets designed
+
+Not inherited. Three things have to be decided before a sink exists, not
+after:
+
+- **Retention period**, chosen rather than defaulted.
+- **Who can read it** — a log bucket is a copy of production behaviour with a
+  different access-control list from production.
+- **Exclusion filters**, written before the first log arrives.
+
+**Tie this to the no-PHI-in-logs rule, because an aggregation bucket is where
+an exception to that rule would first become invisible.** `phi-logs.test.ts`
+asserts what the application writes, and gate B9 checks it once on the real
+host. Neither of them can see a bucket that some other project is copying logs
+into. A sink that aggregates across services is the one place a PHI leak could
+sit, retained, in a project nobody is looking at — which is the same shape as
+every other finding in this document: the failure is silent and surfaces
+somewhere that does not point back at it.
+
 ## 8. What is still blocked, and on what
 
 - **A4, the email sender.** Step 7.5 above. A provider that signs a BAA has to
