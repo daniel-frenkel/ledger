@@ -101,53 +101,63 @@ is a sound domain serving an app on an unsupported tier, or a hardened endpoint
 whose invitation lands in spam, or a clinician clicking Accept on text no
 lawyer has read.
 
-### Open question — what else can the project send?
+### Accepted risk — a caller with the public key can cause a send
 
-**Unresolved, and it needs the console rather than this repository.** The A4
-send path replaces Identity Platform's sending *for sign-in*. It replaces
-nothing else, and what else the project permits is configuration, not code.
+**Decided 14 September 2026. This is closed as an accepted risk, not left
+open.** An open item nobody can close becomes noise that trains people to skim
+the list.
 
-The earlier audit said password sign-in is off so no reset template can fire
-*from our flows*. That second clause was doing all the work and it is scoped to
-this repository — and our code is not the only caller, because the browser API
-key is public by design. `accounts:sendOobCode` is unauthenticated by design
-too.
+**Why it cannot be designed away.** Email-link sign-in *requires* the email
+provider enabled, and `accounts:sendOobCode` is unauthenticated by design —
+that is how anyone signs in for the first time. "Disable what can fire" has a
+floor, and the floor is the product. So the residual is real and the question
+is what reduces it.
 
-**What to read, and what the answer turns on.** From a machine with `gcloud`:
+**Four steps, three of which are actions.**
 
-```powershell
-$project = 'courageloop-prod'
-$headers = @{ Authorization = "Bearer $(gcloud auth print-access-token)"; 'X-Goog-User-Project' = $project }
-Invoke-RestMethod -Method Get -Headers $headers `
-  -Uri "https://identitytoolkit.googleapis.com/admin/v2/projects/$project/config" |
-  ConvertTo-Json -Depth 10
-```
+1. **Verify `emailPrivacyConfig.enableImprovedEmailPrivacy`.** Enumeration
+   protection removes the distinguishing error responses from `PASSWORD_RESET`
+   and `VERIFY_AND_CHANGE_EMAIL`, which is exactly what turns a send endpoint
+   into an *existence oracle* — and an existence oracle on a mental health
+   product is a disclosure question, not a spam one. Google enables it by
+   default for projects created on or after 15 September 2023, and
+   `courageloop-prod` was created 11 September 2026, so it is very likely
+   already on. **Likely is not evidence.** Read it:
 
-Report verbatim: `signIn.email.enabled`, `signIn.email.passwordRequired`,
-`signIn.allowDuplicateEmails`, `emailPrivacyConfig.enableImprovedEmailPrivacy`,
-and the `notification.sendEmail` block (templates, sender, bodies).
+   ```powershell
+   $project = 'courageloop-prod'
+   $headers = @{ Authorization = "Bearer $(gcloud auth print-access-token)"; 'X-Goog-User-Project' = $project }
+   Invoke-RestMethod -Method Get -Headers $headers `
+     -Uri "https://identitytoolkit.googleapis.com/admin/v2/projects/$project/config" |
+     ConvertTo-Json -Depth 10
+   ```
 
-**The field that decides it is `emailPrivacyConfig.enableImprovedEmailPrivacy`.**
-Email enumeration protection removes the distinguishing error responses from
-`PASSWORD_RESET` and `VERIFY_AND_CHANGE_EMAIL`, which is precisely what turns a
-send endpoint into an existence oracle. Google enables it by default for
-projects created on or after **15 September 2023**; `courageloop-prod` was
-created 11 September 2026, so it is **very likely already on** — but "likely"
-is not evidence, and the whole point of this entry is that a claim about the
-deployed project needs the deployed project as its source.
+   If it is on, record it here as verified with the date and the output. If it
+   is off, turn it on — that one is not a judgment call.
 
-**Two things are true regardless of that field**, and they are separable:
+2. **Set the project's public-facing name to CourageLoop**, so the default
+   template stops naming `courageloop-prod`. Identity Platform → Settings.
 
-- An unauthenticated caller with the public key can *cause a send* to an
-  address they already know. Enumeration protection does not stop that; it
-  stops them *learning* whether the address is registered.
-- Any such message goes through the built-in sender with the default template
-  naming `courageloop-prod`, because the A4 path only covers sign-in.
+3. **Add HTTP referrer restrictions to the browser API key**, limited to
+   `courageloop.com` and `app.courageloop.com`. **Partial, and labelled that
+   way deliberately:** referrers are set by the client and are trivially
+   spoofed. This raises the cost of casual abuse and does **nothing** against a
+   determined caller. It is not a control and should not be written up as one.
 
-**No provider configuration has been changed, and none should be without a
-ruling.** The options, once the facts are in, are to reduce what can fire
-rather than to plumb a sender for mail we never want sent — but that is a
-decision to take on evidence.
+4. **Then accept the residual.** Someone holding the public key can cause a
+   sign-in or reset message to be sent to an address they already know. They
+   cannot learn whether that address is registered, once step 1 is confirmed.
+
+**The mitigating fact, recorded in the same place as the risk** so the two are
+read together: those messages go out **from Google's built-in sender, not from
+`courageloop.com`**. Abuse costs the project's sending reputation rather than
+our domain's — the A4 relay path covers sign-in and only sign-in, and that
+turns out to be a boundary worth having rather than a gap to close.
+
+**What would change this.** A report of someone actually being mailed
+repeatedly, or a change that routes these messages through our own sender —
+the second would move the reputational cost onto `courageloop.com` and this
+entry would need reopening.
 
 ## B. Controls the Security Rule expects — the ones the app does not yet have
 

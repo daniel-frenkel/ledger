@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "test": "vitest run --exclude test/rls.test.ts",
-    "test:rls": "vitest run test/rls.test.ts",
+    "test:rls": "vitest run test/rls.test.ts --outputFile.json=./.vitest-results-rls.json",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:migrate:prod": "tsx scripts/migrate-prod.ts",
@@ -33,7 +33,7 @@
     "fastify": "^5.1.0",
     "jose": "^5.9.6",
     "node-cron": "^3.0.3",
-    "nodemailer": "^10.0.10",
+    "nodemailer": "10.0.10",
     "pg": "^8.13.1",
     "pino": "^9.5.0",
     "zod": "^3.23.8"
@@ -41,7 +41,7 @@
   "devDependencies": {
     "@types/node": "^20.17.10",
     "@types/node-cron": "^3.0.11",
-    "@types/nodemailer": "^8.0.1",
+    "@types/nodemailer": "8.0.1",
     "@types/pg": "^8.11.10",
     "drizzle-kit": "^0.31.10",
     "pino-pretty": "^13.0.0",
