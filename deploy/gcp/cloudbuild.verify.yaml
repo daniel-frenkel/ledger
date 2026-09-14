@@ -1,0 +1,35 @@
+# Builds the `verify` target of packages/api/Dockerfile.
+#
+# `gcloud builds submit --tag` always builds the Dockerfile's final stage, and
+# the final stage is deliberately the runtime server. This config exists to
+# select the other one.
+#
+# The verify image is not a deployable server and must never be used as one: it
+# carries the full workspace, the dev dependencies and a Postgres client. It
+# exists to run packages/api/scripts/verify-cloudsql.sh as a Cloud Run job
+# inside the VPC, because the Cloud SQL instance is private-IP only and there is
+# no path to it from outside. See docs/deploy.md §6.
+#
+#   gcloud builds submit --region=us-west1 --config=deploy/gcp/cloudbuild.verify.yaml .
+
+substitutions:
+  _REGION: us-west1
+  _REPO: courageloop
+  _IMAGE: verify
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --target=verify
+      - --file=packages/api/Dockerfile
+      - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:$SHORT_SHA
+      - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:latest
+      - .
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:$SHORT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY

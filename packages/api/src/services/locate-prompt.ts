@@ -17,10 +17,8 @@
  * server at boot, not produce a truncated prompt on the first real note.
  */
 import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { GATE_KEYS, GATE_QUESTIONS, OBSERVATIONS } from '@ledger/shared';
-import { findWorkspaceRoot } from '../env.js';
+import { docsFile } from '../docs-root.js';
 
 /** Documents quoted into the prompt, relative to `docs/theory/`. */
 export const CORPUS_FILES = ['tools/decision-aid-locating-the-floor.md'] as const;
@@ -29,17 +27,12 @@ export const CORPUS_FILES = ['tools/decision-aid-locating-the-floor.md'] as cons
 export const SIGNS_NOT_SELF_REPORT =
   'the floor is read from signs and patterns the client is the last to see, not asked for by self-report';
 
-function theoryDir(): string {
-  const root = findWorkspaceRoot(path.dirname(fileURLToPath(import.meta.url)));
-  if (!root) throw new Error('locate: cannot find the workspace root, so docs/theory is unreachable');
-  return path.join(root, 'docs', 'theory');
-}
-
 function readCorpus(): string {
-  const dir = theoryDir();
   return CORPUS_FILES.map((f) => {
-    const file = path.join(dir, f);
-    if (!fs.existsSync(file)) throw new Error(`locate: missing prompt document docs/theory/${f}`);
+    // Located by src/docs-root.ts: the walk up for pnpm-workspace.yaml works
+    // in a checkout and not in the image, which is why DOCS_ROOT exists.
+    const file = docsFile('theory', ...f.split('/'));
+    if (!file) throw new Error(`locate: missing prompt document docs/theory/${f}`);
     // CR is a line terminator in JS regex; normalise once, at the read.
     return fs.readFileSync(file, 'utf8').replace(/\r\n?/g, '\n').trim();
   }).join('\n\n---\n\n');

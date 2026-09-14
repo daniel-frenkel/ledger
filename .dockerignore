@@ -1,0 +1,39 @@
+# What does not belong in the build context.
+#
+# The API's Dockerfile copies named paths rather than `COPY . .`, so nothing
+# here is load-bearing for what ends up in the image. It is here for two other
+# reasons: the context is uploaded to the builder on every build, and `.env` is
+# the one file in this repository that must never leave the machine it is on.
+
+.git
+node_modules
+**/node_modules
+
+# Build output. The image builds its own; a stale local dist must never win.
+dist
+**/dist
+.next
+**/.next
+.expo
+**/.expo
+coverage
+**/coverage
+
+# Secrets. `.env.example` is the template and is committed; `.env` is real.
+.env
+.env.*
+!.env.example
+
+# Nothing here is needed to build or run the server.
+*.log
+.vscode
+.idea
+.DS_Store
+
+# NOT excluded, deliberately: docs/theory and docs/legal.
+#
+# The API reads both from disk at runtime — the assistant's system prompt comes
+# from the corpus so it cannot drift from the document, and the BAA's
+# frontmatter is the only source of the version anyone accepts. Excluding
+# `docs/` here would break the image in a way that only shows up when the
+# assistant is switched on, or when a clinician tries to accept the agreement.
