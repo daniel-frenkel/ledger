@@ -252,8 +252,11 @@ describe('the export', () => {
 
     const csv = read('predictions.csv');
     expect(csv).not.toContain(CLIENT_A);
-    // Column 0 is run_id; the pseudonym is column 1.
-    expect(csv.split('\n')[1]!.split(',')[1]).toMatch(/^[0-9a-f]{16}$/);
+    // By header, not by position. Adding run_id at column 0 broke the one
+    // assertion in this file that counted columns instead of naming them.
+    const header = csv.split('\n')[0]!.split(',');
+    const row = csv.split('\n')[1]!.split(',');
+    expect(row[header.indexOf('participant')]).toMatch(/^[0-9a-f]{16}$/);
   });
 
   /**
@@ -325,7 +328,8 @@ describe('the export', () => {
     expect(resolved.getTime() - created.getTime()).toBe(0);
     expect(days).not.toBe(0);
     expect(created.getTime()).toBe(new Date(T).getTime() + days * 86_400_000);
-    expect(pseudonym(CLIENT_A, secret)).toBe(row[0]);
+    expect(pseudonym(CLIENT_A, secret)).toBe(row[header.indexOf('participant')]);
+    expect(row[header.indexOf('run_id')]).toBeTruthy();
   });
 
   it('writes a codebook naming every column it exported', async () => {
