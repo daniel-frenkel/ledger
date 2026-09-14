@@ -58,6 +58,37 @@ not done rather than re-derived.
 Steps 1 through 5 and step 7 are done. **Step 6 is deferred to Prompt 2** for
 the reason written there. Step 8 is the standing list of what is still blocked.
 
+### The organisation contains eight projects. We use one.
+
+Observed 14 September 2026. Recorded so that a future reader who runs
+`gcloud projects list` and finds seven unfamiliar names does not have to work
+out which one matters.
+
+| Project ID | Name | |
+|---|---|---|
+| `courageloop-prod` | CourageLoop | **ours — the only one in scope** |
+| `cs-project-0kqm4lcr` | central-logging-monitoring | wizard output |
+| `cs-project-1c4rr85f` | nonprod | wizard output |
+| `cs-project-7cyrxkk7` | prod | wizard output |
+| `cs-project-vynzfwnh` | development | wizard output |
+| `google-mpf-5v7vrftg6mkd` | Non-Production-mp | wizard output |
+| `google-mpf-ca4o3gdkz7ip` | Development-mp | wizard output |
+| `google-mpf-dh4y1ovr7z8j` | Production-mp | wizard output |
+
+**`courageloop-prod` is the only project in scope for everything in this
+document and in `docs/deploy.md`.** Every `gcloud` command here names it
+explicitly, and none of them touches the other seven.
+
+The other seven are Google Cloud Setup wizard output — the same provenance as
+the log sink in §7a, and the same category: infrastructure nobody designed and
+nothing here documents. **The difference is that there is no evidence anything
+runs in them.** So this is an inventory line and not a task: nothing is being
+investigated, nothing is being cleaned up, and no gate is being added.
+
+It becomes a real item only if one of them is spending money. Billing by
+project is being checked separately; if that turns something up it gets raised
+then, on evidence.
+
 ---
 
 ## 1. Enable the APIs
@@ -311,15 +342,29 @@ skipped.
    responsibility for deliverability, or let us write the message body. The
    beta needs all three.
 
-## 7a. The org-level log sink — deleted, not repaired
+## 7a. The org-level log sink — gone, and not repaired
 
-**Decision, 14 September 2026.** The Google Cloud Setup wizard created an
+**Resolved, 14 September 2026.** The Google Cloud Setup wizard created an
 org-level sink, `org-level-logsink-611109317176`, exporting to a bucket in a
-project it also created (`cs-project-0kqm4lcr`). Since the Foundation Builder
-cleanup it has been failing with `log_bucket_permission_denied`. **It is being
-deleted rather than repaired.**
+project it also created (`cs-project-0kqm4lcr`). It was failing with
+`log_bucket_permission_denied`.
 
-Three reasons, and the first is the one that generalises:
+**It is already gone.** `gcloud logging sinks list` at both org and project
+level returns only `_Required` and `_Default` — the built-ins — so the
+Foundation Builder cleanup had removed it before anyone looked. Nothing was
+done to it here, and nothing needs to be.
+
+**The failure notification postdated the fix**, which is why it read as live.
+Worth knowing for the next one: an error email describes state at the time of
+the failure, not current state, so the first step is to look rather than to
+act on the message.
+
+The decision below stands as a decision — if it had still existed, it would
+have been deleted rather than repaired, and the reasoning is what makes that
+the right answer for the next wizard-created thing too.
+
+Three reasons it would not have been worth repairing, and the first is the one
+that generalises:
 
 **An undocumented log destination in a wizard-created project is exactly the
 thing the covered-and-GA rule exists to catch.** Nobody chose that project,
