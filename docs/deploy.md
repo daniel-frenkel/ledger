@@ -608,6 +608,23 @@ API origin. Record the confirmation in `docs/data-path.md` under A6.
 The test exists and passes in CI. B9 asks for it once against Cloud Logging,
 because a log pipeline is not the thing the test exercises.
 
+**The first successful sign-in verifies three A4 items at once**, and it is
+worth doing deliberately rather than noticing later:
+
+| What it exercises | What "working" looks like |
+|---|---|
+| Project display name | the email says **CourageLoop**, not `courageloop-prod` |
+| Identity Toolkit, under the narrowed API key | the link arrives and signs you in |
+| Token Service, under the same key | **the session survives past the hour mark** |
+
+The third is the one that fails late. **If sign-in works and sessions die
+around an hour in, look at the API key screen before the session code** — a
+key restricted to Identity Toolkit alone permits sign-in and forbids refresh,
+and the symptom arrives an hour after the change that caused it, in a
+different part of the system. Both APIs, or neither.
+
+Then the log check:
+
 1. Sign in on the deployed app as yourself.
 2. Write one prediction whose situation contains a distinctive string —
    `ZQX-PROD-CHECK-0001`, matching the shape the test uses.

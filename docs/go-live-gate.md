@@ -125,8 +125,15 @@ that is how anyone signs in for the first time. "Disable what can fire" has a
 floor, and the floor is the product. So the residual is real and the question
 is what reduces it.
 
-**Four steps. Step 1 is done and evidenced; steps 2 and 3 remain open and are
-Daniel's; step 4 is the acceptance that follows.**
+**Four steps. Step 1 is verified with evidence. Steps 2 and 3 are configured
+but not verified — the settings are applied and nothing has exercised them,
+because nothing is deployed. Step 4 is the acceptance that follows.**
+
+**Why "configured" is not "verified" here**, specifically: no email has
+rendered with the new `%APP_NAME%`, and no client has completed a token
+refresh under the narrowed key. Both are correct as configuration. The
+evidence that they work does not exist yet and cannot until the deploy — see
+the sign-in check in `docs/deploy.md` §9, which exercises all three at once.
 
 1. **`emailPrivacyConfig.enableImprovedEmailPrivacy` — VERIFIED ON,
    14 September 2026.** Enumeration protection removes the distinguishing
@@ -184,7 +191,7 @@ Daniel's; step 4 is the acceptance that follows.**
    > number in the message is not ours, and the thing it names is already on.
 
 
-2. **NOT DONE — set the Google Cloud project display name to CourageLoop.**
+2. **CONFIGURED 14 September 2026, not verified — the Google Cloud project display name is CourageLoop.**
 
    `%APP_NAME%` in the Identity Platform templates resolves to the **project
    display name**, not to the OAuth consent screen's application name. So this
@@ -200,8 +207,9 @@ Daniel's; step 4 is the acceptance that follows.**
    repository, in `DATABASE_URL`, and in the Identity Platform issuer
    continues to resolve. The display name is the label; the id is the address.
 
-3. **NOT DONE — restrict the browser API key to two APIs.** Doable now; the
-   *referrer* restriction is a different thing and has moved to A10, below.
+3. **CONFIGURED 14 September 2026, not verified — the browser API key is
+   restricted to Identity Toolkit API and Token Service API.** Application
+   restrictions are left at **None**, per the A10 deferral below.
 
    **Identity Toolkit API *and* Token Service API. Both.** Restricting to
    Identity Toolkit alone lets sign-in succeed and then kills token refresh

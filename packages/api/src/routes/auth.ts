@@ -27,7 +27,7 @@ import { z } from 'zod';
 import crypto from 'node:crypto';
 import { config } from '../config.js';
 import { authAdmin, authAdminConfigured } from '../auth-admin.js';
-import { emailConfigured, sendSignInLink } from '../services/email.js';
+import { deliverSignInLinkEmail, emailConfigured } from '../services/email.js';
 
 export const SIGN_IN_PATH = '/v1/auth/sign-in-link';
 
@@ -99,7 +99,7 @@ const auth: FastifyPluginAsync = async (app) => {
       const base = which === 'clinician' ? c.CLINICIAN_URL : c.WEB_URL;
       try {
         const link = await authAdmin().signInLink(email, `${base.replace(/\/+$/, '')}/auth/callback`);
-        await sendSignInLink(email, link);
+        await deliverSignInLinkEmail(email, link);
       } catch (err) {
         // Deliberately swallowed. An unknown address, a provider refusal and a
         // relay failure must be indistinguishable from success, or this route
