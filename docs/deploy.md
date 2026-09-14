@@ -67,9 +67,37 @@ Everything that would be a credential in a `.env` goes in Secret Manager and is
 referenced by the service. None of it is ever a plain environment variable on
 the revision, where it is readable by anyone with console view access.
 
+### 2.1 — First: back up FIELD_ENCRYPTION_KEY, before it is a secret
+
+**This is a precondition, not an afterthought, and it is gate A9.**
+
+`FIELD_ENCRYPTION_KEY` decrypts every journal entry, prediction, prior label
+and body-state note in the database. It is the one value in this system that
+cannot be regenerated: lose it and all of that prose is still in the database
+and permanently unreadable. Database backups do not help — they hold the same
+ciphertext.
+
+So, in this order:
+
+1. Generate the key **outside this project**, on a machine you control.
+2. Store it somewhere that is neither this Google project nor this repository —
+   a password manager, or paper in a safe. Somewhere that survives losing
+   access to the project, because that is one of the cases this protects
+   against.
+3. **Read it back from that store once** and check it against what you
+   generated. An untested backup is not a backup, and this is the one value
+   where finding out later is finding out too late.
+4. Only then create the secret version.
+
+This document does not generate the key, print it, or carry it in an example.
+The value never appears in this repository, in a fixture, or in anything a
+transcript could capture.
+
+### 2.2 — Then the secret versions
+
 ```sh
-printf '%s' "$(openssl rand -base64 32)" | \
-  gcloud secrets create field-encryption-key --data-file=-
+# The key from 2.1, pasted from your backup — not generated here.
+gcloud secrets create field-encryption-key --data-file=-
 
 printf '%s' 'postgresql://ledger_api:PASSWORD@/ledger?host=/cloudsql/courageloop-prod:us-west1:courageloop-db' | \
   gcloud secrets create database-url --data-file=-
@@ -80,12 +108,6 @@ printf '%s' 'postgresql://postgres:PASSWORD@/ledger?host=/cloudsql/courageloop-p
 
 `db-owner-password` and `ledger-api-password` already exist from
 `gcp-setup.md` §3; the two URLs above embed them.
-
-**`FIELD_ENCRYPTION_KEY` is the one that cannot be regenerated.** It decrypts
-every journal entry, prediction, prior label and body-state note in the
-database. Losing it loses all of that prose permanently — the rows survive and
-their contents do not. Back the value up somewhere that is not this project
-before anything is written with it.
 
 ## 3. The service account
 
@@ -262,30 +284,106 @@ The API is public because clients call it from a browser; what protects data is
 the bearer token on every request, RLS in Postgres, and the issuer-and-audience
 check — never network reachability.
 
-## 8. The static sites — A6
+## 8. The two apps — A6
 
-**Firebase Hosting**, for both `app.courageloop.com` and `courageloop.com`.
-The reason over Cloud Storage plus Cloud CDN: managed certificates and custom
-domains are included and automatic, SPA rewrites are one line of config rather
-than a load balancer URL map, and it is already in this project because
-Identity Platform is. Cloud Storage plus a load balancer is more moving parts
-for a bucket of static files.
+Each app is **its own Cloud Run service**. Not Firebase Hosting, and the reason
+is written down here rather than left to memory.
+
+### Why not Firebase Hosting
+
+It was the obvious choice and it is the wrong one. Managed certificates and
+custom domains are included, SPA rewrites are one config line, and it is
+already adjacent to the project because Identity Platform is. All true, and
+none of it matters, because:
+
+**Firebase Hosting is not on Google's HIPAA covered-products list.** Cloud Run,
+Cloud SQL, Secret Manager, Cloud Build, Artifact Registry and Identity Platform
+are. Google's own guidance is to ensure products not explicitly covered by the
+BAA are not used in connection with PHI. Both `apps/web` and `apps/clinician`
+touch PHI — the clinician app reads client records directly — so neither ships
+on it.
+
+This paragraph exists so that nobody re-adds Firebase Hosting in six months for
+the same sensible-sounding reasons. The reasons were never wrong; they were
+answering the wrong question.
+
+A pure marketing site with no auth and no client identifiers would be fine on
+Firebase Hosting. **There is no such site in this repository today**, so this is
+not a carve-out to build against.
+
+### What they are instead
+
+| | Service | Image |
+|---|---|---|
+| `app.courageloop.com` | `web` | `apps/web/Dockerfile` — Vite build, served by nginx |
+| `courageloop.com` | `clinician` | `apps/clinician/Dockerfile` — Next.js `output: 'standalone'` |
+
+The client PWA is static files, so nginx serves them with an SPA fallback: it
+is a solved problem with a long list of ways to get it wrong, and path
+traversal and MIME sniffing are two of them. The clinician app is not static —
+it is a Next.js server with prerendered pages — so it runs as one.
+
+Both scale to zero, so an idle beta costs nothing but storage.
 
 ```sh
-pnpm --filter @ledger/web build     # -> apps/web/dist
-pnpm --filter @ledger/clinician build
-firebase deploy --only hosting
+gcloud builds submit --region=us-west1   --tag=us-west1-docker.pkg.dev/courageloop-prod/courageloop/web:$(git rev-parse --short HEAD)   --file=apps/web/Dockerfile .
+
+gcloud run deploy web --region=us-west1   --image=us-west1-docker.pkg.dev/courageloop-prod/courageloop/web:COMMIT   --min-instances=0 --max-instances=4 --allow-unauthenticated
 ```
 
-Both need an SPA rewrite to `/index.html` and the API origin configured at
-build time (`VITE_API_URL`, `NEXT_PUBLIC_API_URL`).
+The same for `clinician`, with its own Dockerfile and tag.
 
-**Not a PHI hop, and this is the claim to confirm rather than assume.** The
-browser loads the application shell from the static host and then calls
-`api.courageloop.com` directly. Nothing proxies through the static host, so no
-client data transits it. After deploying, confirm it: open the app, watch the
-network panel, and check that every `/v1/` request goes to the API origin.
-Record the confirmation in `docs/data-path.md` under A6.
+**Build-time values, not revision values.** Vite and Next both inline
+`VITE_*` / `NEXT_PUBLIC_*` at build time, so the API origin and the Identity
+Platform key are properties of the *image*. Changing one means a rebuild, not a
+new revision with different environment variables — a trap worth knowing before
+you try the latter and wonder why nothing changed. The Dockerfiles take them as
+`--build-arg`; all are public by design.
+
+### Custom domains — a decision for Daniel, not one I made
+
+`us-west1` **is** on the supported region list for Cloud Run domain mappings,
+so the mapping route is available:
+
+```sh
+gcloud beta run domain-mappings create --service=web   --domain=app.courageloop.com --region=us-west1
+```
+
+But the same page carries two documented limitations, and you asked to be told
+rather than have the tradeoff decided:
+
+1. **"Due to latency issues, they are not production-ready and are not
+   supported at General Availability. At the moment, this option is not
+   recommended for production services."** Google's words, about domain
+   mappings.
+2. **TLS 1.0 and 1.1 cannot be disabled on a domain mapping.** No PHI transits
+   these origins — the browser loads the shell and then calls
+   `api.courageloop.com` directly — so this is not a breach of the BAA. It is
+   still a control you would rather have than not, and one a security
+   questionnaire will ask about.
+
+The alternative is a **global external Application Load Balancer**, which is
+what Google recommends for production: custom TLS policy (so 1.2 minimum),
+Cloud Armor if wanted, and both hostnames behind one load balancer using host
+rules.
+
+**Cost:** one global forwarding rule is **$0.025/hour ≈ $18.25/month**, and
+that first rule covers up to five, so both hostnames share it. Data processing
+is charged per region and is negligible at beta scale. So roughly **$18–20 a
+month** against **$0** for domain mappings.
+
+Against ~$12/month for the database, that is not a rounding error, which is why
+it is your call. **If the mapping hits a limitation at execution, stop and
+report rather than switching route mid-flight.**
+
+### Not a PHI hop — the claim to confirm, not assume
+
+The browser loads the application shell and then calls `api.courageloop.com`
+directly. Nothing proxies through either app's origin, so no client data
+transits them. After deploying, confirm it rather than assuming it: open each
+app, watch the network panel, and check that every `/v1/` request goes to the
+API origin. Record the confirmation in `docs/data-path.md` under A6.
+
 
 ## 9. No PHI in logs, on the real host — B9
 
@@ -313,20 +411,64 @@ alongside the query that produced it. Then delete the prediction.
 enforced, so there is no downloadable key. GitHub Actions authenticates through
 Workload Identity Federation or it does not authenticate.
 
+**Done badly this is worse than the key file it replaces**, because it looks
+like a hardened setup. A provider with no attribute condition mints tokens for
+*any* GitHub repository on the internet — anyone's fork, anyone's fresh repo —
+and nothing about the configuration looks wrong. Two layers, and neither is
+optional.
+
+### Layer 1 — the provider will not mint a token for anyone else
+
 ```sh
 gcloud iam workload-identity-pools create github --location=global
 
-gcloud iam workload-identity-pools providers create-oidc github-provider \
-  --location=global --workload-identity-pool=github \
-  --issuer-uri=https://token.actions.githubusercontent.com \
-  --attribute-mapping=google.subject=assertion.sub,attribute.repository=assertion.repository \
-  --attribute-condition="assertion.repository == 'daniel-frenkel/ledger'"
-
-gcloud iam service-accounts create deployer --display-name="CI deployer"
+gcloud iam workload-identity-pools providers create-oidc github-provider   --location=global --workload-identity-pool=github   --issuer-uri=https://token.actions.githubusercontent.com   --attribute-mapping=google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner,attribute.ref=assertion.ref   --attribute-condition="assertion.repository_owner == 'daniel-frenkel' && assertion.repository == 'daniel-frenkel/ledger'"
 ```
 
-The `--attribute-condition` is not optional. Without it the provider will mint
-tokens for **any** GitHub repository, which is a considerably worse credential
-than the key file this replaces. Bind `deployer` to the pool for that
-repository only, and grant it `run.admin`, `artifactregistry.writer` and
-`iam.serviceAccountUser` on `api-runtime` — nothing else.
+Both halves of the condition, not one: the owner check and the full repository
+name. A name alone is a string someone else can create in their own namespace.
+
+### Layer 2 — the service account will not be impersonated by anyone else
+
+Scope the binding by `attribute.repository`, **not by the pool**. A binding on
+the pool grants every identity the pool can ever mint; a binding on the
+attribute grants exactly one repository, and stays correct if layer 1 is ever
+loosened by accident.
+
+```sh
+gcloud iam service-accounts create deployer --display-name="CI deployer"
+POOL=projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github
+
+gcloud iam service-accounts add-iam-policy-binding   deployer@courageloop-prod.iam.gserviceaccount.com   --role=roles/iam.workloadIdentityUser   --member="principalSet://iam.googleapis.com/$POOL/attribute.repository/daniel-frenkel/ledger"
+```
+
+For any job that **deploys**, add the ref as well, so a pull request from a
+fork cannot obtain a deploy token even if it runs in this repository's context:
+
+```sh
+gcloud iam service-accounts add-iam-policy-binding   deployer@courageloop-prod.iam.gserviceaccount.com   --role=roles/iam.workloadIdentityUser   --member="principalSet://iam.googleapis.com/$POOL/attribute.ref/refs/heads/main"
+```
+
+Grant `deployer` only `run.admin`, `artifactregistry.writer`, and
+`iam.serviceAccountUser` on `api-runtime`. Nothing else.
+
+### Verify it by making it fail
+
+**A provider that works from `main` proves nothing about what else it
+accepts.** The evidence this step closes on is a refusal, not a success.
+
+From a scratch repository under a different owner — or a fork of this one —
+run a workflow that requests a token from the provider:
+
+```yaml
+- uses: google-github-actions/auth@v2
+  with:
+    workload_identity_provider: projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github/providers/github-provider
+    service_account: deployer@courageloop-prod.iam.gserviceaccount.com
+```
+
+The expected result is a failure at the auth step, naming the attribute
+condition. **Put that failure in the report** — the error message and the
+repository it came from. A green run from `main` alongside it is the control,
+not the evidence.
+
