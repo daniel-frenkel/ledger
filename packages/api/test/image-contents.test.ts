@@ -61,6 +61,28 @@ describe('the runtime image', () => {
     }
   });
 
+  /**
+   * The static apps are Cloud Run services too, and each has one omission that
+   * fails the same way the docs bug did: quietly, and only once deployed.
+   *
+   * Next's standalone bundle does not trace `.next/static` or `public` into
+   * itself. Leave either out and every page renders while every stylesheet,
+   * font and image 404s — which looks like a CSS problem rather than a
+   * packaging one, and nothing in a checkout reproduces it.
+   */
+  it('the clinician image carries the assets standalone does not trace', () => {
+    const f = fs.readFileSync(path.join(root, 'apps', 'clinician', 'Dockerfile'), 'utf8');
+    expect(f).toMatch(/\.next\/standalone/);
+    expect(f).toMatch(/\.next\/static\s+\.\/apps\/clinician\/\.next\/static/);
+    expect(f).toMatch(/apps\/clinician\/public\s+\.\/apps\/clinician\/public/);
+  });
+
+  it('the web image carries its nginx config and the built app', () => {
+    const f = fs.readFileSync(path.join(root, 'apps', 'web', 'Dockerfile'), 'utf8');
+    expect(f).toMatch(/apps\/web\/nginx\.conf\s+\/etc\/nginx\/conf\.d\/default\.conf/);
+    expect(f).toMatch(/apps\/web\/dist\s+\/usr\/share\/nginx\/html/);
+  });
+
   // The image copies directories, so a file added to either one travels
   // automatically — but only if it is under the directory that is copied.
   it('copies the directories the readers actually name', () => {

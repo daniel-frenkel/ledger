@@ -27,6 +27,8 @@ Standing rules. These are not negotiable and you do not need to ask about them:
 - The crisis rules in packages/shared/src/crisis/index.ts are hard-coded and deterministic. Do not add a model, do not change a rule without adding the sentence you're changing it for to packages/shared/test/crisis.test.ts (both the must-match and must-not-match lists).
 - No streaks, badges, progress bars, or engagement mechanics anywhere in the client. The vocabulary constants in packages/shared/src/vocabulary/index.ts are the words the app uses; don't introduce theory terms ("prior", "furnace", "precision", "floor") into client-facing copy.
 - Do not add any third-party service, SDK, or hosted dependency not already in package.json without stopping and asking. Ordinary npm libraries are fine; anything that phones home is not.
+- **A Google service is not exempt from that rule.** Before any Google product enters the deploy path, check it against Google's HIPAA covered-products list and name that check in the PR. Being Google's, being in the same project, and being covered by the BAA are three different things — Firebase Hosting is Google's, was going to be in the project, and is not on the list.
+- **A gate closes on evidence that the procedure ran, never on the existence of the procedure.** If the only artifact is a document, the gate state is "procedure written, not executed" with the date the procedure was written.
 - Work on a branch named for the task. Never commit to main. Never commit .env. Commit messages: what and why, no fluff.
 - Before you say you're done: `pnpm -r typecheck`, `pnpm -r test`, and (if a Postgres is available) `pnpm --filter @ledger/api test:rls` all pass. If you can't run something, say so explicitly.
 
