@@ -63,7 +63,7 @@ The API's CORS allowlist is exactly these three origins, from `CORS_ORIGINS`, an
 | A7 ⚖ | Business entity and insurance | An LLC (or equivalent) as the contracting party on A1, and cyber-liability insurance that covers PHI. Insurers often supply the BAA template and a security questionnaire — the questionnaire is a useful checklist. | not started |
 | A8 | Database tier | **The Cloud SQL instance must be on a dedicated-core tier with an SLA before the first invite link is sent to anyone outside the build.** See **the first-invite cluster** below — this is one of three, and none of them is independently skippable. The beta starts on a shared-core tier (`db-f1-micro`, ≈$12/month all-in) because no client data is in it and the SLA is not worth paying for yet; shared-core carries none. The move is an instance edit and a restart of a few minutes, to ≈$52/month for 1 vCPU and 3.75 GB. Do it with nothing at stake. Backups, point-in-time recovery, deletion protection and private IP are on from the first day at either tier — only CPU and the SLA are being economised. `docs/gcp-setup.md` §9. | not started |
 | A9 | `FIELD_ENCRYPTION_KEY` backed up | **The key is backed up outside this project before the secret version is created.** It is the one value in the system that cannot be regenerated: it decrypts every journal entry, prediction, prior label and body-state note, and losing it leaves all of that present in the database and permanently unreadable. Backups do not help — they contain the same ciphertext. `docs/deploy.md` §2 makes the backup a numbered precondition rather than an afterthought. Closes on the backup existing and having been read back once, not on the key existing. | not started |
-| A10 | Public hostnames | **The two apps are served from `courageloop.com` and `app.courageloop.com` behind the global external Application Load Balancer, with an SSL policy pinned to a TLS 1.2 minimum, before the first invite link is sent to anyone outside the build.** Until then they are on their generated `*.run.app` URLs, which are GA and free and which this project cannot put a TLS floor on — Google publishes no minimum version for them and no SSL policy can be attached. Cloud Run domain mappings are **not** the answer: they are a Pre-GA offering, and Google's HIPAA guidance says not to use Pre-GA offerings with PHI. The full procedure is written out in `docs/deploy.md` §8 to be executed at the gate. **Closes on the TLS 1.1 handshake being refused on both hostnames** — not on the policy being attached, which is a different claim. | not started |
+| A10 | Public hostnames | **The two apps are served from `courageloop.com` and `app.courageloop.com` behind the global external Application Load Balancer, with an SSL policy pinned to a TLS 1.2 minimum, before the first invite link is sent to anyone outside the build.** Until then they are on their generated `*.run.app` URLs, which are GA and free and which this project cannot put a TLS floor on — Google publishes no minimum version for them and no SSL policy can be attached. Cloud Run domain mappings are **not** the answer: they are a Pre-GA offering, and Google's HIPAA guidance says not to use Pre-GA offerings with PHI. The full procedure is written out in `docs/deploy.md` §8 to be executed at the gate. **Closes on the TLS 1.1 handshake being refused on both hostnames** — not on the policy being attached, which is a different claim.<br><br>**Also carries the browser API key's referrer restriction**, moved here from A4: it restricts by origin, and our origins do not exist until the deploy mints them. Set to the custom domains before the domains resolve and the app breaks on first load, presenting as an auth failure rather than as a key restriction. It stays **partial** wherever it lands — referrers are set by the client and trivially spoofed, so it raises the cost of casual abuse and does nothing against a determined caller. Not a control, and not to be written up as one.<br><br>**Prerequisite, checked 14 September 2026 and currently satisfied:** no server-side call may use the browser key when this is applied. Servers send no `Origin` or `Referer`, so a referrer restriction rejects every server-side call, and the symptom is sign-in emails silently failing in production while the same key works perfectly from a browser. A4's rewrite already resolved this — `accounts:sendOobCode` moved to the API, which authenticates with the metadata-server token and never sees the browser key. **Re-check before applying**, because the ordering is the whole finding: if anything server-side uses the key again, it moves to its own credential *before* the restriction, never after. | not started |
 | — | Sentry | Not enabled. Stays off in beta. If enabled later, Sentry signs BAAs on its business tier and the PII scrubbing already specified is required. | off |
 
 ### The first-invite cluster — A1, A4, A8, A10, C1
@@ -184,14 +184,42 @@ Daniel's; step 4 is the acceptance that follows.**
    > number in the message is not ours, and the thing it names is already on.
 
 
-2. **NOT DONE — set the project's public-facing name to CourageLoop**, so the default
-   template stops naming `courageloop-prod`. Identity Platform → Settings.
+2. **NOT DONE — set the Google Cloud project display name to CourageLoop.**
 
-3. **NOT DONE — add HTTP referrer restrictions to the browser API key**, limited to
-   `courageloop.com` and `app.courageloop.com`. **Partial, and labelled that
-   way deliberately:** referrers are set by the client and are trivially
-   spoofed. This raises the cost of casual abuse and does **nothing** against a
-   determined caller. It is not a control and should not be written up as one.
+   `%APP_NAME%` in the Identity Platform templates resolves to the **project
+   display name**, not to the OAuth consent screen's application name. So this
+   is a `gcloud` call and not a console path in Identity Platform:
+
+   ```sh
+   gcloud projects update courageloop-prod --name="CourageLoop"
+   ```
+
+   **The project ID is immutable and is not affected by this.** That is worth
+   saying, because `projects update --name` reads as though it renames
+   something load-bearing: every `courageloop-prod` reference in this
+   repository, in `DATABASE_URL`, and in the Identity Platform issuer
+   continues to resolve. The display name is the label; the id is the address.
+
+3. **NOT DONE — restrict the browser API key to two APIs.** Doable now; the
+   *referrer* restriction is a different thing and has moved to A10, below.
+
+   **Identity Toolkit API *and* Token Service API. Both.** Restricting to
+   Identity Toolkit alone lets sign-in succeed and then kills token refresh
+   about an hour later, because `refresh()` calls
+   `securetoken.googleapis.com`, which is Token Service. The symptom is
+   clients being silently signed out an hour into a session, which reads as a
+   session bug and sends someone into the token-refresh code rather than into
+   the key configuration. That one costs a day.
+
+   Verified from the repository, 14 September 2026: those are the **only** two
+   Google hosts either app contacts with this key —
+   `identitytoolkit.googleapis.com` and `securetoken.googleapis.com`, both in
+   `packages/shared/src/auth/identity-platform.ts`. No Firestore, no Firebase
+   Storage, no Remote Config; push goes through Expo (`expo-server-sdk`,
+   `expo-notifications`) and not FCM; and **no `firebase` package exists in any
+   `package.json`**, so nothing can reach Firebase Installations or App Check
+   at SDK init.
+
 
 4. **Accept the residual.** Someone holding the public key can cause a
    sign-in or reset message to be sent to an address they already know. **They
