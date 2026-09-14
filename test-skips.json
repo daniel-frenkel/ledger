@@ -39,6 +39,11 @@
     "@ledger/api": {
       "expected": 0,
       "allowed": []
+    },
+    "@ledger/api (rls)": {
+      "expected": 0,
+      "allowed": [],
+      "$note": "A separate suite in the same package, run by test:rls. It has its own report file because sharing one with the api suite meant the second run overwrote the first, and this script checked only whichever ran last."
     }
   }
 }

@@ -56,8 +56,23 @@ const auth: FastifyPluginAsync = async (app) => {
         rateLimit: {
           max: 5,
           timeWindow: '15 minutes',
-          // Keyed by address when there is one, so that a distributed source
-          // cannot mail one person repeatedly by varying its IP.
+          /**
+           * Keyed by **address** when there is one, falling back to IP.
+           *
+           * The two keys are not redundant and the address one is not an
+           * optimisation — do not collapse them into an IP limit.
+           *
+           * Ordinary rate limiting protects the service from a caller. Here
+           * the service is not the victim: **the recipient is.** A per-IP
+           * limit lets a distributed source mail one person all night by
+           * varying its address of origin, and every counter looks healthy
+           * throughout, because no single IP did anything unusual. The person
+           * receiving five hundred sign-in emails from a mental health product
+           * is the one harmed, and nothing in a per-IP view would show it.
+           *
+           * The IP key is the fallback for requests with no parseable address,
+           * which is the only case where there is nobody to protect.
+           */
           keyGenerator: (req: FastifyRequest) => {
             const body = req.body as { email?: unknown } | undefined;
             return typeof body?.email === 'string' ? `a:${addressKey(body.email)}` : `i:${req.ip}`;

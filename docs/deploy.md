@@ -801,9 +801,15 @@ requirement instead, and the sign-in screen owes the client three things:
 **Status: written, not built.** The current screen says "Check your email" and
 does none of the three.
 
-### Open — the Identity Platform template inventory
+### What this path does not cover
 
-The send path above replaces Identity Platform's sending **for sign-in**. It
-does not replace anything else the project might still be able to send, and
-what else it can send is console state that cannot be read from this
-repository. See the question recorded under A4 in `docs/go-live-gate.md`.
+It replaces Identity Platform's sending **for sign-in**, and for nothing else.
+Anything else the project can still send goes out through the built-in sender
+with a default template.
+
+That is recorded as an **accepted risk** rather than an open item — see
+*Accepted risk — a caller with the public key can cause a send* in
+`docs/go-live-gate.md`, with the three steps that reduce it and the reason it
+cannot be designed away. The short version: email-link sign-in requires the
+email provider enabled, so there is a floor below which "disable what can fire"
+cannot go, and the floor is the product.

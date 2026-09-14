@@ -30,3 +30,4 @@ certs/
 
 # vitest JSON reports, written under CI for scripts/check-skips.mjs
 .vitest-results.json
+.vitest-results-rls.json

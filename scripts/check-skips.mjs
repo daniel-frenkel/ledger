@@ -31,32 +31,43 @@ import { fileURLToPath } from 'node:url';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const inventory = JSON.parse(fs.readFileSync(path.join(root, 'test-skips.json'), 'utf8'));
 
-/** Where each package's vitest writes its JSON report. */
-const DIRS = {
-  '@ledger/shared': 'packages/shared',
-  '@ledger/web': 'apps/web',
-  '@ledger/clinician': 'apps/clinician',
-  '@ledger/api': 'packages/api',
+/**
+ * Each SUITE's report, not each package's.
+ *
+ * `@ledger/api` runs twice — the ordinary suite and `test:rls` — and they both
+ * used to write `.vitest-results.json` in the same directory. The second run
+ * overwrote the first, so this script was reading 66 rls tests and reporting
+ * them as the api package, and the 290-test api suite had no skip assertion at
+ * all. It passed the whole time, which is the same failure this script exists
+ * to catch, one level up.
+ *
+ * So the unit here is the suite and its report path is explicit. A suite that
+ * shares a path with another is the bug; naming the paths makes that visible.
+ */
+const REPORTS = {
+  '@ledger/shared': 'packages/shared/.vitest-results.json',
+  '@ledger/web': 'apps/web/.vitest-results.json',
+  '@ledger/clinician': 'apps/clinician/.vitest-results.json',
+  '@ledger/api': 'packages/api/.vitest-results.json',
+  '@ledger/api (rls)': 'packages/api/.vitest-results-rls.json',
 };
-
-const RESULTS = '.vitest-results.json';
 
 let failed = false;
 const say = (s) => process.stdout.write(`${s}\n`);
 
 for (const [pkg, spec] of Object.entries(inventory.packages)) {
-  const dir = DIRS[pkg];
-  if (!dir) {
-    say(`✗ ${pkg}: named in test-skips.json but not in this script's DIRS map`);
+  const rel = REPORTS[pkg];
+  if (!rel) {
+    say(`✗ ${pkg}: named in test-skips.json but not in this script's REPORTS map`);
     failed = true;
     continue;
   }
 
-  const file = path.join(root, dir, RESULTS);
+  const file = path.join(root, rel);
   if (!fs.existsSync(file)) {
     // Not a soft skip: a missing report is indistinguishable from a suite that
     // never ran, which is the exact failure this script exists to catch.
-    say(`✗ ${pkg}: no ${RESULTS} at ${dir}. Did the suite run with the JSON reporter?`);
+    say(`✗ ${pkg}: no report at ${rel}. Did the suite run with the JSON reporter?`);
     failed = true;
     continue;
   }
@@ -89,6 +100,13 @@ for (const [pkg, spec] of Object.entries(inventory.packages)) {
   }
 
   say(`✓ ${pkg}: ${skipped.length} skipped, all inventoried (${tests.length} tests)`);
+}
+
+for (const suite of Object.keys(REPORTS)) {
+  if (!inventory.packages[suite]) {
+    say(`✗ ${suite}: has a report path but no entry in test-skips.json`);
+    failed = true;
+  }
 }
 
 if (failed) {
