@@ -1,0 +1,49 @@
+# Builds the API runtime image — the DEFAULT (final) stage of
+# packages/api/Dockerfile.
+#
+# There is no `--target` here, deliberately. The `verify` stage is placed
+# before the runtime stage in the Dockerfile precisely so that the default is
+# the server; naming a target here would undo that arrangement by making the
+# default explicit in one place and implicit in the other.
+#
+# Why a config file and not `gcloud builds submit --tag`:
+#
+#   `--tag` requires a Dockerfile at the ROOT of the uploaded source, and
+#   `gcloud builds submit` has no `--file` flag to point elsewhere. Ours is at
+#   packages/api/Dockerfile and needs the repo root as its build context,
+#   because the image copies docs/theory and docs/legal. That combination —
+#   Dockerfile not at the root, context at the root — is exactly what a build
+#   config is for.
+#
+# The tag is passed in, not baked. `$SHORT_SHA` is NOT available here: Cloud
+# Build populates it only when the source comes from a connected repository,
+# and `builds submit` uploads a local directory. Referencing it would resolve
+# to empty and produce an invalid image reference.
+#
+#   gcloud builds submit --region=us-west1 \
+#     --config=deploy/gcp/cloudbuild.api.yaml \
+#     --substitutions=_TAG=$(git rev-parse --short HEAD) \
+#     .
+#
+# `_TAG` is deliberately NOT given a default. Omit it and the build fails
+# loudly rather than quietly tagging something `latest` — see docs/deploy.md §1
+# on why a revision should name the code it is running.
+
+substitutions:
+  _REGION: us-west1
+  _REPO: courageloop
+  _IMAGE: api
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file=packages/api/Dockerfile
+      - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_TAG}
+      - .
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_TAG}
+
+options:
+  logging: CLOUD_LOGGING_ONLY

@@ -8,6 +8,12 @@ that depends on each step is already written and merged.
 Follow it top to bottom. Nothing here asks you to decide anything — where there
 was a choice, it has been made and the reason is given.
 
+**Run state.** Steps 1–5 and 7 are **configured** — done in the console. The
+Identity Platform MFA `PATCH` and the config `GET` are **verified** — both were
+run and their output is recorded (§7 step 3, and A4 in `go-live-gate.md`).
+Step 6 has never been run. `docs/deploy.md` is in a weaker state again: written
+throughout and executed nowhere, with the table at its head saying so.
+
 **The commands here are PowerShell, deliberately.** They are `Invoke-RestMethod`
 calls with a headers hashtable, which is the clearer form on Windows, and they
 carry no `\` continuations — so they run as written in the shell Daniel is
