@@ -15,6 +15,13 @@
  *   it, and the mapping is never stored — which also means a re-identification
  *   request cannot be answered, and that is the trade being made.
  *
+ *   Per *run* rather than per study, which also makes longitudinal work
+ *   impossible: the same person gets an unrelated pseudonym in each export, so
+ *   a second wave cannot be joined to the first. That was a consequence rather
+ *   than a choice. `docs/research/pseudonym-secret.md` sets out both options
+ *   and their costs; it is an IRB question, not an engineering one, and
+ *   nothing here should change until it is answered.
+ *
  *   **Date-shifted.** One random offset per participant in [−180, +180] days,
  *   applied to every timestamp of theirs. Intervals within a participant
  *   survive exactly, which is what a single-case design needs; calendar dates
@@ -45,6 +52,8 @@ export interface ExportOptions {
   /** Injectable so a test is deterministic; otherwise a fresh secret per run. */
   secret?: Buffer;
   now?: Date;
+  /** Injectable for the same reason: the run id names the output directory. */
+  runId?: string;
 }
 
 export interface ExportResult {
@@ -54,8 +63,25 @@ export interface ExportResult {
   rows: Record<string, number>;
   /** Printed once, never stored. Undefined on a dry run. */
   secret?: string;
+  /** The stamped directory this run wrote into. Undefined on a dry run. */
+  dir?: string;
   files: string[];
 }
+
+/**
+ * A fingerprint of the run secret — never the secret.
+ *
+ * It goes in the codebook so two codebooks from different runs are visibly
+ * different documents rather than identically formatted ones. Truncated, and
+ * of a 32-byte random value, so it discloses nothing about the secret while
+ * still being a thing you can compare by eye.
+ */
+export const secretFingerprint = (secret: Buffer): string =>
+  crypto.createHash('sha256').update(secret).digest('hex').slice(0, 12);
+
+/** `export-<UTC timestamp>-<run id>`. Sortable, unambiguous, one per run. */
+export const runDirName = (at: Date, runId: string): string =>
+  `export-${at.toISOString().replace(/[:.]/g, '-')}-${runId}`;
 
 /** Stable within a run, meaningless across runs. */
 export const pseudonym = (userId: string, secret: Buffer): string =>
@@ -100,12 +126,31 @@ function csvCell(v: unknown, type: Column['type'], days: number): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-function codebook(hash: string, participants: number, at: Date): string {
+function codebook(hash: string, participants: number, at: Date, runId: string, fingerprint: string): string {
   const lines = [
     '# Codebook',
     '',
+    `Run id: \`${runId}\``,
+    `Run secret fingerprint: \`${fingerprint}\` (SHA-256 of the secret, truncated — not the secret)`,
     `Generated ${at.toISOString()} from \`packages/api/src/research/allowlist.ts\`.`,
     `Allowlist SHA-256: \`${hash}\`. Participants: ${participants}.`,
+    '',
+    '## Which run produced these files',
+    '',
+    'Every CSV in this directory carries `run_id` as its **first column**, and every',
+    `row of every file should read \`${runId}\`. If any row does not, the directory`,
+    'holds output from more than one run and **must not be analysed as one dataset**:',
+    'each run mints its own secret, so the same person receives a different',
+    '`participant` value in each, and rows from two runs look joinable and are not.',
+    '',
+    'Check before loading:',
+    '',
+    '```sh',
+    "    awk -F, 'NR>1 {print $1}' *.csv | sort -u    # one value, or stop",
+    '```',
+    '',
+    'The fingerprint above identifies the secret without revealing it, so two',
+    'codebooks from different runs are visibly different documents.',
     '',
     '`participant` is `HMAC-SHA256(user_id, run secret)` truncated to 16 hex characters.',
     'It is stable within this export and meaningless across exports; the mapping is not stored.',
@@ -119,6 +164,7 @@ function codebook(hash: string, participants: number, at: Date): string {
   ];
   for (const t of ALLOWLIST) {
     lines.push(`## ${t.table}`, '', '| column | type | meaning |', '| --- | --- | --- |');
+    lines.push('| run_id | id | The export run that wrote this row. One value per file. |');
     lines.push('| participant | pseudonym | The participant, pseudonymised. |');
     for (const c of t.columns) lines.push(`| ${c.name} | ${c.type} | ${c.meaning} |`);
     lines.push('');
@@ -144,7 +190,7 @@ async function readTable(
 export async function runExport(opts: ExportOptions): Promise<ExportResult> {
   const at = opts.now ?? new Date();
   const secret = opts.secret ?? crypto.randomBytes(32);
-  const runId = newId();
+  const runId = opts.runId ?? newId();
   const hash = allowlistHash();
 
   return withSystem(async (tx) => {
@@ -164,30 +210,65 @@ export async function runExport(opts: ExportOptions): Promise<ExportResult> {
     const files: string[] = [];
     const audited: { table: string; count: number }[] = [];
 
+    /**
+     * One stamped directory per run, so two runs cannot interleave.
+     *
+     * The previous behaviour wrote `<dir>/<table>.csv` directly, and re-running
+     * into a used directory overwrote silently. That is worse than untidy:
+     * every run mints its own secret, so the same person gets a different
+     * `participant` value in each, and a partial second run leaves a directory
+     * of files that look joinable and are not.
+     *
+     * Made impossible rather than detected. An emptiness check with a `--force`
+     * escape would be reached for at exactly the moment somebody is in a hurry
+     * and least able to reason about pseudonym provenance.
+     */
+    let dir: string | undefined;
+    if (!opts.dryRun && opts.outDir) {
+      dir = path.join(opts.outDir, runDirName(at, runId));
+      // `recursive: true` succeeds on an existing directory, which is the one
+      // outcome this must not have.
+      if (fs.existsSync(dir)) throw new Error(`export: ${dir} already exists; refusing to write into it`);
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
     for (const spec of ALLOWLIST) {
       const found = await readTable(tx, spec);
       rows[spec.table] = found.length;
       audited.push({ table: spec.table, count: found.length });
 
-      if (opts.dryRun || !opts.outDir) continue;
+      if (!dir) continue;
 
-      const header = ['participant', ...spec.columns.map((c) => c.name)].join(',');
+      /*
+       * `run_id` is the FIRST column of every file, and a column rather than a
+       * comment or a filename, because prevention does nothing for anyone who
+       * already holds a mixed directory from before this change. A header can
+       * be stripped on the way into R or pandas; a first column survives that,
+       * and makes a mixed dataset detectable after the fact rather than only
+       * preventable beforehand.
+       */
+      const header = ['run_id', 'participant', ...spec.columns.map((c) => c.name)].join(',');
       const body = found.map((r) => {
         const who = String(r['participant']);
         const days = shiftBy.get(who) ?? 0;
         return [
+          runId,
           names.get(who) ?? '',
           ...spec.columns.map((c) => csvCell(r[c.name], c.type, days)),
         ].join(',');
       });
-      const file = path.join(opts.outDir, `${spec.table}.csv`);
+      const file = path.join(dir, `${spec.table}.csv`);
       fs.writeFileSync(file, `${[header, ...body].join('\n')}\n`, 'utf8');
       files.push(file);
     }
 
-    if (!opts.dryRun && opts.outDir) {
-      const file = path.join(opts.outDir, 'codebook.md');
-      fs.writeFileSync(file, codebook(hash.toString('hex'), ids.length, at), 'utf8');
+    if (dir) {
+      const file = path.join(dir, 'codebook.md');
+      fs.writeFileSync(
+        file,
+        codebook(hash.toString('hex'), ids.length, at, runId, secretFingerprint(secret)),
+        'utf8',
+      );
       files.push(file);
     }
 
@@ -213,6 +294,7 @@ export async function runExport(opts: ExportOptions): Promise<ExportResult> {
       participants: ids.length,
       rows,
       ...(opts.dryRun ? {} : { secret: secret.toString('hex') }),
+      ...(dir ? { dir } : {}),
       files,
     };
   });

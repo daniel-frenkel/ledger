@@ -16,7 +16,7 @@ import { closeDb } from '../src/db/client.js';
 import { purgeDeleted } from '../src/jobs/purge.js';
 import { setAuthAdmin } from '../src/auth-admin.js';
 import { ALLOWLIST, FORBIDDEN_NAMES, FORBIDDEN_SUFFIXES, allowlistHash } from '../src/research/allowlist.js';
-import { pseudonym, runExport, shiftDaysFor } from '../src/research/export.js';
+import { pseudonym, runDirName, runExport, shiftDaysFor } from '../src/research/export.js';
 import { ADMIN_URL, CLIENT_A, CLIENT_B, CLINICIAN, acceptBaa, asUser, buildApp, truncateAll, uid } from './helpers.js';
 
 let app: FastifyInstance;
@@ -104,7 +104,23 @@ async function seed(who: string, offset = 0): Promise<void> {
   expect(res.statusCode).toBe(200);
 }
 
-const read = (name: string) => fs.readFileSync(path.join(dir, name), 'utf8');
+/**
+ * Reading the output, now that each run writes its own directory.
+ *
+ * Every run writes into `<dir>/export-<stamp>-<runId>/`, so "the"
+ * predictions.csv is only unambiguous when one run has happened. `read` says
+ * so out loud: it throws unless there is exactly one run directory, which
+ * makes a test that accidentally exports twice fail here rather than assert
+ * against whichever file it happened to find.
+ */
+const theRunDir = (): string => {
+  const runs = fs.readdirSync(dir).filter((e) => e.startsWith('export-'));
+  if (runs.length !== 1) throw new Error(`expected exactly one run directory, found ${runs.length}`);
+  return path.join(dir, runs[0]!);
+};
+const read = (name: string) => fs.readFileSync(path.join(theRunDir(), name), 'utf8');
+/** For the test that deliberately runs twice. */
+const readFrom = (runDir: string, name: string) => fs.readFileSync(path.join(runDir, name), 'utf8');
 
 // ---------------------------------------------------------------------------
 // The tables
@@ -201,7 +217,7 @@ describe('the export', () => {
     const out = await runExport({ dryRun: false, outDir: dir });
     expect(out.participants).toBe(1);
 
-    const csv = read('predictions.csv');
+    const csv = readFrom(out.dir!, 'predictions.csv');
     expect(csv.trim().split('\n')).toHaveLength(2); // header + one row
   });
 
@@ -223,7 +239,7 @@ describe('the export', () => {
     for (const t of ALLOWLIST) {
       const csv = read(`${t.table}.csv`);
       const header = csv.split('\n')[0]!.split(',');
-      expect(header, t.table).toEqual(['participant', ...t.columns.map((c) => c.name)]);
+      expect(header, t.table).toEqual(['run_id', 'participant', ...t.columns.map((c) => c.name)]);
       // And nothing seeded as prose survived anywhere in the file.
       expect(csv, t.table).not.toMatch(/ZQX-/);
     }
@@ -236,19 +252,56 @@ describe('the export', () => {
 
     const csv = read('predictions.csv');
     expect(csv).not.toContain(CLIENT_A);
-    expect(csv.split('\n')[1]!.split(',')[0]).toMatch(/^[0-9a-f]{16}$/);
+    // Column 0 is run_id; the pseudonym is column 1.
+    expect(csv.split('\n')[1]!.split(',')[1]).toMatch(/^[0-9a-f]{16}$/);
   });
 
-  it('gives two runs different pseudonyms for the same person', async () => {
+  /**
+   * The case the stamped directory exists for.
+   *
+   * This test used to rely on the second run overwriting the first, which was
+   * the bug: two runs mint two secrets, so the same person gets two different
+   * pseudonyms, and a directory holding both looks joinable and is not.
+   */
+  it('gives two runs their own directories, and different pseudonyms', async () => {
     await seed(CLIENT_A);
     await consent(CLIENT_A);
 
-    await runExport({ dryRun: false, outDir: dir });
-    const first = read('predictions.csv').split('\n')[1]!.split(',')[0];
-    await runExport({ dryRun: false, outDir: dir });
-    const second = read('predictions.csv').split('\n')[1]!.split(',')[0];
+    const a = await runExport({ dryRun: false, outDir: dir });
+    const b = await runExport({ dryRun: false, outDir: dir });
+    expect(a.dir).toBeDefined();
+    expect(a.dir).not.toBe(b.dir);
 
-    expect(first).not.toBe(second);
+    const first = readFrom(a.dir!, 'predictions.csv').split('\n')[1]!.split(',');
+    const second = readFrom(b.dir!, 'predictions.csv').split('\n')[1]!.split(',');
+
+    // Different pseudonyms for the same person — the reason mixing is unsafe.
+    expect(first[1]).not.toBe(second[1]);
+    // And every row says which run wrote it, so a mixed directory assembled by
+    // hand is detectable after the fact and not only preventable beforehand.
+    expect(first[0]).toBe(a.runId);
+    expect(second[0]).toBe(b.runId);
+  });
+
+  /**
+   * The guard, exercised by forcing the collision it exists for.
+   *
+   * A stamp plus a random run id will not collide in practice, which is the
+   * point — but "will not happen" is not the same as "is handled", and a
+   * directory that already exists is the one case where `recursive: true`
+   * would have silently succeeded and overwritten.
+   */
+  it('refuses to write into a run directory that already exists', async () => {
+    await seed(CLIENT_A);
+    await consent(CLIENT_A);
+    const at = new Date('2026-09-14T12:00:00.000Z');
+    const runId = 'fixed-run-id-for-this-test';
+
+    fs.mkdirSync(path.join(dir, runDirName(at, runId)), { recursive: true });
+
+    await expect(runExport({ dryRun: false, outDir: dir, now: at, runId })).rejects.toThrow(
+      /already exists; refusing/,
+    );
   });
 
   it('shifts dates, and keeps every interval within a participant exact', async () => {
@@ -286,6 +339,32 @@ describe('the export', () => {
       for (const c of t.columns) expect(book, `${t.table}.${c.name}`).toContain(`| ${c.name} |`);
     }
     expect(book).toContain('the mapping is not stored');
+  });
+
+  /**
+   * The provenance a researcher can check holding only the output files.
+   *
+   * Prevention does nothing for a directory assembled by hand, or one that
+   * predates the stamped-directory change. This is the part that makes a mixed
+   * dataset detectable rather than only preventable.
+   */
+  it('puts the run id and a secret fingerprint in the codebook, and never the secret', async () => {
+    await seed(CLIENT_A);
+    await consent(CLIENT_A);
+    const secret = Buffer.alloc(32, 9);
+    const out = await runExport({ dryRun: false, outDir: dir, secret });
+
+    const book = read('codebook.md');
+    expect(book).toContain(out.runId);
+    expect(book).toContain('Run secret fingerprint');
+    // The fingerprint, and emphatically not the secret it fingerprints.
+    expect(book).not.toContain(secret.toString('hex'));
+    expect(book).toMatch(/Run secret fingerprint: `[0-9a-f]{12}`/);
+
+    // Two runs, two visibly different codebooks.
+    const other = await runExport({ dryRun: false, outDir: dir, secret: Buffer.alloc(32, 8) });
+    const otherBook = readFrom(other.dir!, 'codebook.md');
+    expect(otherBook).not.toBe(book);
   });
 
   it('logs the run without saying who was in it', async () => {
