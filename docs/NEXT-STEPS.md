@@ -313,3 +313,22 @@ These are milestone 2 and need their own decisions first:
 ## If something fails
 
 Copy the exact terminal output and the step number. Don't paste `.env` — the values in it are secrets.
+
+### "It passes locally and fails in CI"
+
+**A local typecheck pass is weaker evidence than it looks.** `apps/clinician`
+has `incremental: true`, so `tsc` writes `tsconfig.tsbuildinfo` and can report
+success from cache rather than from the files as they stand now. CI checks out
+fresh and has no cache, so **CI is the sound one** when the two disagree.
+
+If you are trying to reproduce a CI typecheck failure locally:
+
+```sh
+rm -f apps/clinician/tsconfig.tsbuildinfo
+pnpm --filter @ledger/clinician typecheck
+```
+
+This is written down because it costs an hour the first time and five seconds
+every time after. `next build` keeps its own cache at
+`.next/cache/.tsbuildinfo`, which is a different file — the two do not collide,
+they just both remember.

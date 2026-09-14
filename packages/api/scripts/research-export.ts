@@ -32,12 +32,18 @@ const result = await runExport(dryRun ? { dryRun: true } : { dryRun: false, outD
 console.log(`run ${result.runId}`);
 console.log(`participants ${result.participants}`);
 for (const t of ALLOWLIST) {
-  console.log(`  ${t.table}: ${result.rows[t.table] ?? 0} rows, ${t.columns.length + 1} columns`);
+  // +2 for `run_id` and `participant`, which are on every row and on no table.
+  console.log(`  ${t.table}: ${result.rows[t.table] ?? 0} rows, ${t.columns.length + 2} columns`);
 }
 if (dryRun) {
   console.log('\ndry run — nothing was written.');
 } else {
-  for (const f of result.files) console.log(`wrote ${f}`);
+  console.log(`
+wrote ${result.dir}`);
+  for (const f of result.files) console.log(`  ${f}`);
+  console.log('
+Every CSV carries run_id as its first column. One value per directory,');
+  console.log('or the files came from more than one run and must not be joined.');
   console.log('\nRun secret, shown once and stored nowhere:');
   console.log(result.secret);
   console.log('Without it these pseudonyms cannot be linked to any other export.');
