@@ -152,12 +152,84 @@ string at any point.
    `app.courageloop.com` and `courageloop.com`. This list is what stops a
    stolen sign-in link being redirected somewhere else, so it should contain
    these two and nothing else.
-3. **Multi-factor authentication → TOTP → Enable**. Gate B2. Leave SMS off:
-   it is a weaker factor and adds a telephone number to the identity record
-   for no gain.
-4. **Application setup details** → copy the **apiKey**. It goes in
-   `NEXT_PUBLIC_IDENTITY_PLATFORM_API_KEY` and `VITE_IDENTITY_PLATFORM_API_KEY`.
-   It is public by design: it names the project and authorises nothing.
+3. **TOTP — not in the console.** Gate B2. The Multi-factor authentication
+   page offers SMS only; there is no TOTP toggle in the UI. It is enabled
+   through the Admin API instead. In PowerShell:
+
+   ```powershell
+   $project = 'courageloop-prod'
+   $token   = gcloud auth print-access-token
+
+   $body = @{
+     mfa = @{
+       state = 'ENABLED'
+       providerConfigs = @(
+         @{ state = 'ENABLED'; totpProviderConfig = @{ adjacentIntervals = 5 } }
+       )
+     }
+   } | ConvertTo-Json -Depth 6
+
+   $headers = @{ Authorization = "Bearer $token"; 'X-Goog-User-Project' = $project }
+   $uri = "https://identitytoolkit.googleapis.com/admin/v2/projects/$project/config?updateMask=mfa"
+
+   Invoke-RestMethod -Method Patch -Uri $uri -Headers $headers -ContentType 'application/json' -Body $body
+   ```
+
+   **Both `state` fields are required, and this is the trap.** The top-level
+   `mfa.state` governs all multi-factor authentication including TOTP. Set only
+   the provider config and TOTP stays inert — while the response comes back
+   looking exactly like success. The `updateMask=mfa` replaces the whole `mfa`
+   object, so both fields have to travel in the same call; sending
+   `providerConfigs` alone clears the state you meant to set.
+
+   `-Depth 6` on `ConvertTo-Json` is not decoration. PowerShell's default depth
+   is 2, and at that depth the body serialises as
+   `{"mfa":{"providerConfigs":["System.Collections.Hashtable"],"state":"ENABLED"}}`
+   — the provider config becomes the *name of its type*. PowerShell does warn
+   ("Resulting JSON is truncated as serialization has exceeded the set depth of
+   2"), but it is one line in a scrollback and the API's rejection will not
+   mention depth. Both forms checked before this was written down.
+
+   `adjacentIntervals: 5` is Google's own default, not a loosened setting: it is
+   how many adjacent 30-second windows are accepted either side, for clock drift
+   and human typing speed. The allowed range is 0 to 10.
+
+   **SMS stays off by omission**, which is the behaviour to rely on rather than
+   a setting to check: phone MFA lives in a separate `enabledProviders` field
+   that nothing here ever writes. The reason it stays off is unchanged — it is a
+   weaker factor and it adds a telephone number to the identity record for no
+   gain.
+
+   **Verify it, because the PATCH will not tell you.** A `GET` on the same
+   resource:
+
+   ```powershell
+   (Invoke-RestMethod -Method Get -Uri "https://identitytoolkit.googleapis.com/admin/v2/projects/$project/config" -Headers $headers).mfa | ConvertTo-Json -Depth 6
+   ```
+
+   Three things, all of which must be true:
+   - `state` is `ENABLED` — the top-level one
+   - a `providerConfigs` entry with `state: ENABLED` **and** a
+     `totpProviderConfig` inside it
+   - no phone provider: `enabledProviders` is absent or empty
+
+4. **Application setup details** → the **apiKey**. For `courageloop-prod` it is:
+
+   ```
+   AIzaSyDFiAHXuyUU8yZul7iPDJF2Re4m2QzYaIc
+   ```
+
+   It populates `NEXT_PUBLIC_IDENTITY_PLATFORM_API_KEY` and
+   `VITE_IDENTITY_PLATFORM_API_KEY`. Written down here rather than treated as a
+   secret because it is not one: it names the project and authorises nothing,
+   and it is compiled into both client bundles, so anyone with a browser has it
+   already. What protects data is RLS in Postgres and the issuer-and-audience
+   check on every token — never this string.
+
+   It is worth adding **HTTP referrer restrictions** to it in
+   **APIs & Services → Credentials**, limited to `courageloop.com` and
+   `app.courageloop.com`. That buys nothing in confidentiality; it stops someone
+   spending the project's sign-in quota from somewhere else.
 5. **Templates → SMTP settings**: leave for now, and see gate A4. The built-in
    sender is permitted under the BAA and is fine for testing against your own
    address; what it cannot do is send from `courageloop.com`, take
