@@ -472,6 +472,12 @@ picking the tighter profile because it sounds stronger is how a client on an
 old Android phone silently cannot sign in. `COMPATIBLE` is the default and
 permits TLS 1.0, which is the thing being fixed.
 
+Read cold in a config file, `MODERN` looks like the weaker option and
+`RESTRICTED` looks like diligence. For this requirement it is the other way
+round, which is why the reasoning sits here next to the choice rather than
+being left to re-derivation: the version floor is identical either way, and the
+only difference `RESTRICTED` makes is to the people whose browsers it drops.
+
 #### 6. The certificate and the proxies
 
 ```sh
@@ -540,6 +546,31 @@ gcloud run services update clinician --region=us-west1 \
 ```
 
 The API keeps its own ingress setting; this is about the two app origins.
+
+**Ingress and the `allUsers` invoker binding are both required, and they are
+not the same control.** Ingress governs *who can reach* the service; the
+invoker binding governs *who may call it* once reached. The trap is to set
+ingress, conclude the `allUsers` binding is now redundant, and remove it — the
+result is a service unreachable from the internet **and** returning 403 through
+the load balancer, because the balancer's forwarded request still needs an
+identity permitted to invoke.
+
+So keep the `allUsers` invoker binding from §7 **and** set ingress. Ingress does
+the narrowing; the binding is what lets the balancer through it.
+
+**Verify rather than assume, and write down what you saw.** After the ingress
+change, confirm all three:
+
+| Check | Expected |
+|---|---|
+| `curl -I https://app.courageloop.com/` | `200` — a real request, through the balancer |
+| `curl -I https://<service>-<hash>.run.app/` | refused — the second front door is shut |
+| `gcloud compute backend-services get-health web-backend --global` | healthy |
+
+Serverless NEG backends report health differently from instance-group backends,
+so read what the command returns rather than scanning for the word you expect.
+**Record the observed results in this document, below this table.** The step is
+the observation; the commands are only how it is obtained.
 
 #### 9. Verify the floor took effect — do not assume it attached
 

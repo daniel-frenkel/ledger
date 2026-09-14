@@ -27,3 +27,6 @@ certs/
 
 # Next.js
 .next/
+
+# vitest JSON reports, written under CI for scripts/check-skips.mjs
+.vitest-results.json
