@@ -57,7 +57,7 @@ The API's CORS allowlist is exactly these three origins, from `CORS_ORIGINS`, an
 | A1 ⚖ | Loadbearing ↔ each clinician | **A BAA signed at clinician signup**, before any invite can be created. Template from counsel; click-through acceptance recorded with version and timestamp on the clinician's user row. The invite route refuses if `baa_accepted_version` is null. **Part of the first-invite cluster below.** | **mechanism done, document outstanding** — migration 0008 and the acceptance flow work; `docs/legal/clinician-baa.md` is a DRAFT placeholder. **Owner: Daniel. Completion condition: requires health care attorney review.** Not a Code item — no legal text is to be drafted here, and the placeholder says so at the top of itself. |
 | A2 | Database and auth | **Supabase's HIPAA add-on (~$599/mo) is out of reach for the beta, so production moves off Supabase.** Database: **Cloud SQL for PostgreSQL** in the same Google project as Cloud Run — covered by Google's BAA, which is free and self-service in the console. The beta starts on a shared-core instance at ≈$12/mo and moves to ≈$52/mo before any real client's data — see A8. It is plain Postgres: the `ledger_api` role, RLS, and the migrations apply unchanged. Auth: **Google Cloud Identity Platform** (verify it is on Google's current HIPAA covered-services list before relying on it), free at beta scale, email sign-in plus TOTP for B2; the API already verifies JWTs by JWKS URL, so this is config plus the client sign-in screen. Supabase stays as the free dev/CI database only. | **code done, instance not created** — Prompt 11: both providers behind one seam, `AUTH_PROVIDER` picks one; BAA accepted 11 Sept 2026 for `courageloop-prod`; **Instance created 14 Sept 2026** (private IP only, `db-f1-micro`, PITR and deletion protection on). **Stays open**: the verification cannot run from outside the VPC — the Auth Proxy must be on a resource in the instance's VPC, and `constraints/sql.restrictPublicIp` is enforced org-wide and stays enforced — so it runs as a Cloud Run job in Prompt 2. CI already proves the schema on vanilla Postgres; this closes on Google's build. See `docs/gcp-setup.md` §6. |
 | A3 | API hosting | A host that signs a BAA. Render's free and standard tiers do not; proposal 01 already required portability to **Google Cloud Run**, and Google's BAA covers Cloud Run. Prompt 2 changes target from Render to Cloud Run. | **procedure written 14 Sept 2026, not executed** — `docs/deploy.md`: image, service account, Secret Manager bindings, and the org-policy exception public ingress needs. Closes on a deployed service answering /health, not on this document. |
-| A4 | Transactional email | The sign-in code email carries only a six-digit code, but the recipient list at the provider identifies people receiving mental-health care. Treat it as PHI: use a provider that signs a BAA (AWS SES under the AWS BAA, or Mailgun or Twilio SendGrid on their eligible plans — verify current terms). Gmail SMTP is test-only and must be gone. **Identity Platform is a covered service and its built-in sender is permitted under the BAA** — the requirement here is not a compliance one. It is that the sender must be an address on `courageloop.com`, that deliverability to real inboxes has to be someone's responsibility, and that the message body has to be ours to write: a sign-in email is the first thing a client ever sees from this, and it should say what it is. Configure a custom SMTP sender on the tenant. See **the first-invite cluster** below. | not started — still required after Prompt 11, for those reasons |
+| A4 | Transactional email | The sign-in code email carries only a six-digit code, but the recipient list at the provider identifies people receiving mental-health care. Treat it as PHI: use a provider that signs a BAA (AWS SES under the AWS BAA, or Mailgun or Twilio SendGrid on their eligible plans — verify current terms). Gmail SMTP is test-only and must be gone. **Identity Platform is a covered service and its built-in sender is permitted under the BAA** — the requirement here is not a compliance one. It is that the sender must be an address on `courageloop.com`, that deliverability to real inboxes has to be someone's responsibility, and that the message body has to be ours to write: a sign-in email is the first thing a client ever sees from this, and it should say what it is. The send path is built (`docs/deploy.md` §11): the API mints the link and composes the message; Identity Platform never sends, and its Custom SMTP setting stays off permanently. See **the first-invite cluster** below, and **the open question** under it. | not started — still required after Prompt 11, for those reasons |
 | A5 | Anthropic | BAA plus zero-data-retention. **Not required for the beta** — `ASSISTANT_ENABLED` stays false and the Library, locator, ledger, and formulations all work without it. Required before the assistant is turned on. | not started |
 | A6 ⚖ | Static web host | Not a PHI hop: the browser loads the app shell from it and talks to the API directly; no client data transits the static host. Document this in data-path and confirm the SPA never proxies API calls through it. | **host changed 14 Sept 2026; confirmation outstanding** — **not Firebase Hosting**: it is not on Google's HIPAA covered-products list and both apps touch PHI. Each app is its own Cloud Run service, `docs/deploy.md` §8, with the network-panel check to run after the first deploy. |
 | A7 ⚖ | Business entity and insurance | An LLC (or equivalent) as the contracting party on A1, and cyber-liability insurance that covers PHI. Insurers often supply the BAA template and a security questionnaire — the questionnaire is a useful checklist. | not started |
@@ -100,6 +100,54 @@ the other three.** Three out of four is not three-quarters of the way there; it
 is a sound domain serving an app on an unsupported tier, or a hardened endpoint
 whose invitation lands in spam, or a clinician clicking Accept on text no
 lawyer has read.
+
+### Open question — what else can the project send?
+
+**Unresolved, and it needs the console rather than this repository.** The A4
+send path replaces Identity Platform's sending *for sign-in*. It replaces
+nothing else, and what else the project permits is configuration, not code.
+
+The earlier audit said password sign-in is off so no reset template can fire
+*from our flows*. That second clause was doing all the work and it is scoped to
+this repository — and our code is not the only caller, because the browser API
+key is public by design. `accounts:sendOobCode` is unauthenticated by design
+too.
+
+**What to read, and what the answer turns on.** From a machine with `gcloud`:
+
+```powershell
+$project = 'courageloop-prod'
+$headers = @{ Authorization = "Bearer $(gcloud auth print-access-token)"; 'X-Goog-User-Project' = $project }
+Invoke-RestMethod -Method Get -Headers $headers `
+  -Uri "https://identitytoolkit.googleapis.com/admin/v2/projects/$project/config" |
+  ConvertTo-Json -Depth 10
+```
+
+Report verbatim: `signIn.email.enabled`, `signIn.email.passwordRequired`,
+`signIn.allowDuplicateEmails`, `emailPrivacyConfig.enableImprovedEmailPrivacy`,
+and the `notification.sendEmail` block (templates, sender, bodies).
+
+**The field that decides it is `emailPrivacyConfig.enableImprovedEmailPrivacy`.**
+Email enumeration protection removes the distinguishing error responses from
+`PASSWORD_RESET` and `VERIFY_AND_CHANGE_EMAIL`, which is precisely what turns a
+send endpoint into an existence oracle. Google enables it by default for
+projects created on or after **15 September 2023**; `courageloop-prod` was
+created 11 September 2026, so it is **very likely already on** — but "likely"
+is not evidence, and the whole point of this entry is that a claim about the
+deployed project needs the deployed project as its source.
+
+**Two things are true regardless of that field**, and they are separable:
+
+- An unauthenticated caller with the public key can *cause a send* to an
+  address they already know. Enumeration protection does not stop that; it
+  stops them *learning* whether the address is registered.
+- Any such message goes through the built-in sender with the default template
+  naming `courageloop-prod`, because the A4 path only covers sign-in.
+
+**No provider configuration has been changed, and none should be without a
+ruling.** The options, once the facts are in, are to reduce what can fire
+rather than to plumb a sender for mail we never want sent — but that is a
+decision to take on evidence.
 
 ## B. Controls the Security Rule expects — the ones the app does not yet have
 

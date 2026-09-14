@@ -690,3 +690,120 @@ condition. **Put that failure in the report** — the error message and the
 repository it came from. A green run from `main` alongside it is the control,
 not the evidence.
 
+
+## 11. Email — gate A4
+
+The sign-in email is the first thing a client ever sees from this product. It
+has to come from `courageloop.com`, someone has to be responsible for whether
+it arrives, and the words in it have to be ours.
+
+### The sender: Google Workspace SMTP relay
+
+Already covered by the Workspace BAA accepted 14 September 2026, so it adds no
+vendor and no new agreement.
+
+**SendGrid is excluded permanently.** Twilio's own documentation:
+
+> "SendGrid is not a HIPAA Eligible Service" and Twilio "is not able to sign
+> Business Associate Agreements for SendGrid."
+
+That is not a gap to work around with a configuration; it is a closed door.
+Recorded here so it is never revisited by someone comparing deliverability
+features.
+
+**AWS SES was considered and rejected.** Cheaper per message and perfectly
+BAA-able under the AWS BAA — and a second cloud account, a second set of
+credentials, a second console and a second bill. That is operational surface a
+solo operator should not take on for a few cents a month.
+
+### The API sends. Identity Platform never does.
+
+Our code mints the link and composes the message:
+
+1. `AuthAdmin.signInLink()` calls Identity Platform's admin `accounts:sendOobCode`
+   with `returnOobLink: true`, which returns the link **instead of** emailing
+   it. It needs the service-account token, which is also what stops anyone
+   holding the public API key from calling it.
+2. `services/email-copy.ts` composes the message. Its composers take a link and
+   nothing else, so there is no parameter through which a name or a date could
+   arrive.
+3. `services/email.ts` sends it through the relay.
+
+Three reasons, in order. It is the only way to control the body under **no PHI
+in email bodies** — Identity Platform's templates are console state, editable
+by anyone with console access, and they interpolate the project name. It makes
+the provider a configuration change rather than a re-plumb. And it lets the
+relay authenticate by IP allowlist, so **no credential exists at all** rather
+than one being well stored.
+
+### Identity Platform's Custom SMTP stays OFF — permanently
+
+**This is a decision, not an omission.** "Custom SMTP settings → Enable" is
+exactly the box a person reaches for when wiring up email, and the whole design
+above exists to avoid it.
+
+Google's servers would connect to the relay from addresses nobody can
+enumerate, so that path can only ever authenticate with SMTP AUTH — a Workspace
+account password living inside Identity Platform's configuration, outside
+Secret Manager, with no clean rotation. It is the credential path we rejected,
+in a worse place.
+
+### Relay configuration — run this AFTER the static egress IP exists
+
+**Nothing is configured yet, deliberately.** The relay has no IP to point at
+until something is deployed, and the failure mode of configuring it early is
+severe (below).
+
+Admin console → **Apps → Google Workspace → Gmail → Routing → SMTP relay
+service**:
+
+| Setting | Value |
+|---|---|
+| Allowed senders | **Only addresses in my domains** — so `noreply@courageloop.com` needs no licensed seat |
+| Authentication | **Only accept mail from the specified IP addresses** → the reserved Cloud NAT egress IP |
+| | **Require SMTP Authentication — leave UNCHECKED.** That is the credential path we rejected. |
+| Encryption | **Require TLS encryption — checked** |
+
+> **Forbidden: saving this with neither authentication option selected.**
+>
+> Not "not recommended" — forbidden. A relay saved with no authentication
+> method is an **open relay for courageloop.com**: anyone on the internet can
+> send mail that appears to come from our domain, to anyone. It is a
+> configuration someone could reach for while debugging a delivery failure,
+> because removing the IP restriction is the obvious way to test whether the IP
+> restriction is the problem. It is not a debugging step. If mail is not
+> arriving, the answer is to check the egress IP, never to remove the check.
+
+The API refuses to send until `EMAIL_ENABLED` is set, and refuses to boot with
+`EMAIL_ENABLED` and no `MAIL_FROM` — so "not yet configured" means "does not
+send" rather than "sends from a Google default".
+
+### The known gap: no bounce or complaint webhooks
+
+The relay does not tell us when a message bounces or is marked as spam. **A
+failed sign-in email is silent**, and the person affected sees only that
+nothing arrived.
+
+This is not fixable with infrastructure, and adding a provider that has
+webhooks would undo every reason the relay was chosen. It is a product
+requirement instead, and the sign-in screen owes the client three things:
+
+1. **State the address it sent to**, so a typo is visible without a support
+   conversation. "Check your email" is useless to someone who typed
+   `gmial.com`.
+2. **Offer a resend**, rate-limited, with the address editable — so correcting
+   a typo does not mean starting over.
+3. **Offer a path that does not depend on that email arriving.** A client who
+   cannot receive our mail must not be locked out with no recourse, which for a
+   product someone may be using at their worst is not a support inconvenience
+   but an abandonment.
+
+**Status: written, not built.** The current screen says "Check your email" and
+does none of the three.
+
+### Open — the Identity Platform template inventory
+
+The send path above replaces Identity Platform's sending **for sign-in**. It
+does not replace anything else the project might still be able to send, and
+what else it can send is console state that cannot be read from this
+repository. See the question recorded under A4 in `docs/go-live-gate.md`.

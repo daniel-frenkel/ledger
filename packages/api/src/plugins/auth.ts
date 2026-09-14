@@ -29,7 +29,9 @@ declare module 'fastify' {
   }
 }
 
-const PUBLIC = new Set(['/health', '/']);
+// Starting a sign-in cannot require being signed in. It is the most exposed
+// route in the system and routes/auth.ts is written for that.
+const PUBLIC = new Set(['/health', '/', '/v1/auth/sign-in-link']);
 
 async function identify(request: FastifyRequest): Promise<{ id: string; role: UserRole; aal: AssuranceLevel }> {
   const c = config();

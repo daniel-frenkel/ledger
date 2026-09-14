@@ -133,6 +133,16 @@ function toTokenSet(raw: RawTokens): TokenSet {
  * it lands, and Identity Platform refuses a domain that is not on the
  * project's authorised list, so a stolen link cannot be redirected.
  */
+/**
+ * @deprecated Not the production path since go-live gate A4.
+ *
+ * This asks Identity Platform to compose and send the message, which means the
+ * body is a console-editable template interpolating the project name. The API
+ * now mints the link with the admin variant and sends from its own copy —
+ * `packages/api/src/services/email-copy.ts`, which has a test asserting its
+ * exact text. Kept because it is the documented protocol call and the shape of
+ * the endpoint is worth having recorded, not because anything should call it.
+ */
 export async function sendSignInLink(cfg: IdentityPlatformConfig, email: string): Promise<void> {
   await call(cfg, `${IDENTITY}/v1/accounts:sendOobCode`, {
     requestType: 'EMAIL_SIGNIN',

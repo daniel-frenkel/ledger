@@ -23,7 +23,6 @@ import {
   completeSignIn,
   isExpired,
   refresh,
-  sendSignInLink,
   type IdentityPlatformConfig,
   type MfaChallenge,
   type TokenSet,
@@ -162,8 +161,27 @@ class IdentityPlatformClient implements AuthClient {
     for (const cb of this.listeners) cb();
   }
 
+  /**
+   * Asks **our API** to send the link, not Identity Platform.
+   *
+   * Gate A4: the API mints the link through the admin seam and composes the
+   * message from copy that lives in a file with a test on it. Identity
+   * Platform's own sender would use a console-editable template that
+   * interpolates the project name, which is a body nobody here can hold to the
+   * "no PHI in email bodies" rule.
+   *
+   * The response is 204 whether or not the address is known — deliberately, so
+   * this screen cannot become an account-existence oracle — so there is
+   * nothing here to branch on.
+   */
   async begin(email: string): Promise<SecondStep> {
-    await sendSignInLink(this.cfg, email);
+    const res = await fetch(`${API_URL}/v1/auth/sign-in-link`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, app: 'client' }),
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`sign-in link request failed (${res.status})`);
     try {
       sessionStorage.setItem(PENDING_EMAIL_KEY, email);
     } catch {
