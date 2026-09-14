@@ -8,6 +8,13 @@ that depends on each step is already written and merged.
 Follow it top to bottom. Nothing here asks you to decide anything — where there
 was a choice, it has been made and the reason is given.
 
+**The commands here are PowerShell, deliberately.** They are `Invoke-RestMethod`
+calls with a headers hashtable, which is the clearer form on Windows, and they
+carry no `\` continuations — so they run as written in the shell Daniel is
+already in. `docs/deploy.md` is the opposite: it is `sh` throughout and has to
+be run from Git Bash or WSL, because `\` is not a PowerShell continuation.
+**Do not convert either document to match the other.**
+
 **Project facts.** Organisation `courageloop.com` (`611109317176`) · project
 `courageloop-prod` · billing `0195B9-B97371-6F379D` (paid) · region `us-west1`
 for everything · HIPAA BAA accepted 11 September 2026, scoped to the project.
