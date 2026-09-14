@@ -293,6 +293,8 @@ Report in the standard shape after each part.
 
 Replaces the original Prompt 2. Reason: the beta will hold real client data, and Google's BAA covers Cloud Run; Render's ordinary tiers are not covered. `docs/go-live-gate.md` is on disk.
 
+**Carried in from Prompt 11:** the Cloud SQL verification could not run from a laptop — the instance is private-IP only, and `constraints/sql.restrictPublicIp` is enforced org-wide and stays enforced. It becomes item 8 below, inside the VPC. Gate A2 stays open until it has run and reported.
+
 ```
 Task: deploy packages/api to Google Cloud Run and apps/web as a static site, per docs/go-live-gate.md A3, A6, B5, B9. The Dockerfile stays portable; nothing GCP-specific enters the repo except an optional deploy/gcp/ folder.
 
@@ -303,6 +305,8 @@ Task: deploy packages/api to Google Cloud Run and apps/web as a static site, per
 5. Set the production CORS origin in server.ts to the static site's exact origin — no wildcard, no regex.
 6. After deploy: /health from here; then run the PHI-in-logs test's distinctive string through a real request and show it is absent from Cloud Logging (B9). Put the evidence (log query and empty result) in the report.
 7. docs/data-path.md: replace the Render hop with Cloud Run, note Secret Manager, and mark A3/B5/B9 done with the date.
+8. The Cloud SQL verification, as a Cloud Run **job** — carried from Prompt 11, which could not run it: the instance is private-IP only (10.83.0.3), the Auth Proxy needs to be on a resource in the same VPC, and constraints/sql.restrictPublicIp is enforced org-wide and stays enforced. The job does what packages/api/scripts/verify-cloudsql.sh does — create ledger_api from src/db/rls/000_roles.sql, run db:migrate, run test:rls as ledger_api, print the case count and any failures — reaching the private IP through the VPC connector (Direct VPC egress or a Serverless VPC Access connector; say which and why). Both passwords come from Secret Manager, referenced by the job rather than typed anywhere. Keep every refusal the script already has: a host outside courageloop-prod, anything that looks like Supabase, a missing password, and no password or connection string printed at any point. Run it as the same service account the API uses, so what it proves is what production does. Report the case count it prints. Gate A2 closes on that number, not on the CI run — CI already proves the schema on vanilla Postgres; this proves it on Google's build.
+9. Org policy, both scoped to courageloop-prod and never org-wide: constraints/iam.allowedPolicyMemberDomains will refuse the allUsers grant a public Cloud Run service needs, so add the narrowest exception scoped to the project and say so in the report; constraints/iam.disableServiceAccountKeyCreation means CI cannot hold a downloaded deploy key, so use Workload Identity Federation.
 
 Report in the standard shape.
 ```

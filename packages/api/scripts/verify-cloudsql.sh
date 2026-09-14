@@ -3,11 +3,21 @@
 # Prove that nothing in this schema is Supabase-specific, by running it on
 # Cloud SQL — go-live gate A2, Prompt 11.
 #
-# I could not run this. The instance did not exist when the code was written,
-# there are no gcloud credentials on the machine that wrote it, and the
-# organisation forbids downloaded service-account keys, so there is no way to
-# get any. This script is the artifact that crosses that boundary: you run it
-# against the real instance and paste back what it prints.
+# This runs INSIDE THE VPC, as a Cloud Run job — not from a laptop. The instance
+# is private-IP only, the Cloud SQL Auth Proxy has to be on a resource with
+# access to the instance's VPC network, and constraints/sql.restrictPublicIp is
+# enforced org-wide, so there is no laptop path and no public-IP workaround.
+# Prompt 2 builds the job; see docs/gcp-setup.md §6.
+#
+# That is better than a laptop path rather than a substitute for one: it is
+# repeatable on every schema change, it never needs a public IP, and it runs as
+# the same service account the API uses against the same private endpoint — so
+# what it proves is what production does.
+#
+# The passwords come from Secret Manager. Cloud Run resolves the secret versions
+# and injects them as environment variables, which is why this reads them from
+# the environment: the value never exists in a file, an argument, or a shell
+# history.
 #
 # What it does, in order:
 #   1. Refuses to run anywhere that is not the Cloud SQL instance you named.
@@ -20,18 +30,16 @@
 #   - run against a host that is not the one named in CLOUDSQL_HOST
 #   - touch anything in Supabase
 #
-# Usage, from the repo root, with the Cloud SQL Auth Proxy already running:
+# In the Cloud Run job, CLOUDSQL_HOST is the instance's private address and the
+# two passwords are Secret Manager references resolved at start:
 #
-#     export CLOUDSQL_HOST=127.0.0.1              # where the proxy listens
-#     export CLOUDSQL_INSTANCE=courageloop-prod:us-west1:courageloop-db
-#     export PGPASSWORD_OWNER='…'                 # the postgres user's password
-#     export PGPASSWORD_API='…'                   # the ledger_api password
-#     packages/api/scripts/verify-cloudsql.sh
+#     CLOUDSQL_HOST=10.83.0.3
+#     CLOUDSQL_INSTANCE=courageloop-prod:us-west1:courageloop-db
+#     PGPASSWORD_OWNER  -> secret db-owner-password:latest
+#     PGPASSWORD_API    -> secret ledger-api-password:latest
 #
-# The two passwords come from Secret Manager and are never written to a file:
-#
-#     export PGPASSWORD_OWNER="$(gcloud secrets versions access latest --secret=db-owner-password)"
-#     export PGPASSWORD_API="$(gcloud secrets versions access latest --secret=ledger-api-password)"
+# From anywhere else it will refuse, or simply fail to reach the host, and both
+# of those are the correct outcome.
 #
 set -euo pipefail
 

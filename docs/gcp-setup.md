@@ -40,6 +40,26 @@ a dependency of this repository, and neither should become one.
 
 ---
 
+## Current state — 14 September 2026
+
+What exists in the console now, so that the steps below can be read as done or
+not done rather than re-derived.
+
+| | |
+|---|---|
+| Cloud SQL instance | `courageloop-db`, **RUNNABLE**, `POSTGRES_16`, `db-f1-micro`, `us-west1-a` |
+| Address | private `10.83.0.3`, **no public address** |
+| Data protection | point-in-time recovery **on**, deletion protection **on** |
+| Database | `ledger` created |
+| Identity Platform | enabled; email-link sign-in on, **password sign-in off** |
+| Authorised domains | `app.courageloop.com` and `courageloop.com`, nothing else |
+| Second factor | **TOTP enabled via the Admin API**, SMS off |
+
+Steps 1 through 5 and step 7 are done. **Step 6 is deferred to Prompt 2** for
+the reason written there. Step 8 is the standing list of what is still blocked.
+
+---
+
 ## 1. Enable the APIs
 
 Console → **APIs & Services → Enable APIs and services**. Enable, one at a time:
@@ -116,30 +136,48 @@ The `ledger_api` role is *not* created here — `verify-cloudsql.sh` creates it
 from `packages/api/src/db/rls/000_roles.sql` in step 6, so that the role the
 production database has is the role the repository says it should have.
 
-## 6. Run the verification
+## 6. The verification — deferred to Prompt 2, and why
 
-This is the step that proves nothing in the schema is Supabase-specific, which
-is the claim go-live gate A2 rests on. From a machine with `gcloud`, the
-[Cloud SQL Auth Proxy](https://cloud.google.com/sql/docs/postgres/sql-proxy)
-and this repository:
+**This cannot be run from a laptop, and the obvious workaround is closed.**
+Both findings are from the console run of 14 September 2026.
 
-```sh
-cloud-sql-proxy courageloop-prod:us-west1:courageloop-db &
+The instance is private-IP only (`10.83.0.3`). Google's own guidance is
+unambiguous: *"To connect to a Cloud SQL instance using private IP, the Cloud
+SQL Auth Proxy must be on a resource with access to the same VPC network as the
+instance."* A laptop is not in the VPC. `--private-ip` does not help — it
+chooses which endpoint the proxy uses once network access already exists; it
+does not create the access.
 
-export CLOUDSQL_HOST=127.0.0.1
-export CLOUDSQL_INSTANCE=courageloop-prod:us-west1:courageloop-db
-export PGPASSWORD_OWNER="$(gcloud secrets versions access latest --secret=db-owner-password)"
-export PGPASSWORD_API="$(gcloud secrets versions access latest --secret=ledger-api-password)"
+Temporarily assigning a public IP is refused by
+`constraints/sql.restrictPublicIp`, enforced org-wide. **That policy stays
+enforced and no exception is being granted for this.** A database holding PHI
+should not acquire a public address so that a convenience step can run.
 
-packages/api/scripts/verify-cloudsql.sh
-```
+So the verification **moves inside the VPC and runs as a Cloud Run job**, added
+to Prompt 2's scope. It does what `packages/api/scripts/verify-cloudsql.sh`
+does — create `ledger_api` from `src/db/rls/000_roles.sql`, run `db:migrate`,
+run the RLS suite as `ledger_api`, print the case count — reaching the private
+IP through the VPC connector, and taking both passwords from Secret Manager.
+Every refusal the script already has stays: a host outside `courageloop-prod`,
+anything resembling Supabase, a missing password, and no password or connection
+string printed at any point.
 
-It creates the role, sets its password from the environment, runs the
-migrations, then runs the RLS suite as `ledger_api` and prints the case count.
-Paste the last block of its output back. The script refuses to run against a
-host outside `courageloop-prod`, refuses anything that looks like Supabase,
-refuses to start without both passwords, and prints no password or connection
-string at any point.
+**This is better than the laptop path, not merely a substitute for it.** It is
+repeatable on every schema change rather than a thing someone did once from a
+machine nobody else has. It never needs a public IP, so the org policy stays
+untouched. And it runs as the same service account the API will use, against
+the same private endpoint, so what it proves is what production actually does —
+a proxy on a laptop proves that a laptop could connect.
+
+**What is already established without it.** The RLS suite runs in CI on every
+push, against vanilla PostgreSQL in a container, and passes — so "nothing in
+the schema, the policies or the migrations is Supabase-specific" is largely
+proven already, and was proven before this instance existed. What Cloud SQL
+adds is narrower and still worth having: that role creation, the migrations and
+RLS behave the same on Google's build, with Google's defaults and extensions.
+
+**Gate A2 stays open until that job has run and reported.** Deferred is not
+skipped.
 
 ## 7. Identity Platform
 
