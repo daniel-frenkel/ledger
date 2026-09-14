@@ -12,6 +12,31 @@ time.
 **Hostnames of record.** `courageloop.com` — public site and clinician app ·
 `app.courageloop.com` — client PWA · `api.courageloop.com` — the API.
 
+## Run this from Git Bash or WSL, not PowerShell
+
+Every command below is `sh` — twenty-four of them, and six sections' worth use
+`\` at the end of a line to continue onto the next.
+
+**`\` is not a line continuation in PowerShell. The backtick is.** Paste one of
+these into PowerShell and it does not fail cleanly as "wrong shell": the first
+line runs on its own, truncated, and the remainder arrives as a separate
+command with a parse error. A `gcloud run deploy` missing most of its flags is
+a deploy, not an error message.
+
+So: **Git Bash** — it ships with Git for Windows, which is already installed
+here — or **WSL**. Then every command works verbatim and nobody hand-translates
+twenty-four of them into a production change.
+
+If this gets ignored, the symptom is a `ParserError` or an unexpected-token
+complaint naming a `\`. That is this paragraph.
+
+**The exceptions, already PowerShell and meant to stay that way:** the Admin
+API calls in [`gcp-setup.md`](gcp-setup.md) and the config `GET` in
+[`go-live-gate.md`](go-live-gate.md). Those are written for PowerShell
+deliberately — `Invoke-RestMethod` with a headers hashtable is the clearer form
+on Windows, and they carry no `\` continuations. **Do not convert either
+document to match the other.**
+
 ---
 
 ## 1. Artifact Registry, and the build
