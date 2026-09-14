@@ -101,6 +101,13 @@ is a sound domain serving an app on an unsupported tier, or a hardened endpoint
 whose invitation lands in spam, or a clinician clicking Accept on text no
 lawyer has read.
 
+### Accepted risks — the convention
+
+An accepted risk is only accepted if it can stop being accepted. **Every entry
+below ends with a "What would change this" line: the named condition that
+reopens it.** Without one, an accepted risk is indistinguishable from an
+ignored one six months later, and a list of those trains people to skim.
+
 ### Accepted risk — a caller with the public key can cause a send
 
 **Decided 14 September 2026. This is closed as an accepted risk, not left
