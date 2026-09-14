@@ -287,7 +287,25 @@ skipped.
    **APIs & Services → Credentials**, limited to `courageloop.com` and
    `app.courageloop.com`. That buys nothing in confidentiality; it stops someone
    spending the project's sign-in quota from somewhere else.
-5. **Templates → SMTP settings**: leave for now, and see gate A4. The built-in
+5. **OAuth consent screen — deliberately not configured.**
+
+   Not applicable today, and this is a decision rather than an oversight. No
+   Google sign-in provider is enabled — sign-in is email-link only — so no user
+   ever reaches that screen, and configuring it would be configuring a surface
+   nobody sees.
+
+   **What reverses this: adding Google (or any OAuth provider) as a sign-in
+   method.** The consent screen then becomes *the first thing a clinician
+   sees*, before they have seen anything of ours, and an unconfigured one
+   displays the raw project id. That is the same failure as the `%APP_NAME%`
+   leak in the email templates, on a considerably more visible surface.
+
+   It is also **downstream of gate C1**, not independent of it: the consent
+   screen requires public privacy-policy and terms-of-service URLs, and neither
+   document exists yet. So adding an OAuth provider is blocked on C1 whether or
+   not anyone has thought about the consent screen.
+
+6. **Templates → SMTP settings**: leave for now, and see gate A4. The built-in
    sender is permitted under the BAA and is fine for testing against your own
    address; what it cannot do is send from `courageloop.com`, take
    responsibility for deliverability, or let us write the message body. The

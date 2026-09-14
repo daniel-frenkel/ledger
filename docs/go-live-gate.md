@@ -66,9 +66,9 @@ The API's CORS allowlist is exactly these three origins, from `CORS_ORIGINS`, an
 | A10 | Public hostnames | **The two apps are served from `courageloop.com` and `app.courageloop.com` behind the global external Application Load Balancer, with an SSL policy pinned to a TLS 1.2 minimum, before the first invite link is sent to anyone outside the build.** Until then they are on their generated `*.run.app` URLs, which are GA and free and which this project cannot put a TLS floor on — Google publishes no minimum version for them and no SSL policy can be attached. Cloud Run domain mappings are **not** the answer: they are a Pre-GA offering, and Google's HIPAA guidance says not to use Pre-GA offerings with PHI. The full procedure is written out in `docs/deploy.md` §8 to be executed at the gate. **Closes on the TLS 1.1 handshake being refused on both hostnames** — not on the policy being attached, which is a different claim. | not started |
 | — | Sentry | Not enabled. Stays off in beta. If enabled later, Sentry signs BAAs on its business tier and the PII scrubbing already specified is required. | off |
 
-### The first-invite cluster — A1, A4, A8, A10
+### The first-invite cluster — A1, A4, A8, A10, C1
 
-These four share a trigger, and it is not "the first real client's data". It is
+These five share a trigger, and it is not "the first real client's data". It is
 earlier and more precise: **the first invite link sent to anyone outside the
 build.**
 
@@ -83,6 +83,10 @@ build.**
 - **A10** — the real hostnames behind the load balancer with a TLS 1.2 floor,
   so the link is to `app.courageloop.com` and not to a generated `*.run.app`
   address.
+- **C1** — a privacy policy and terms of service, reviewed by a health care
+  attorney. A client following an invitation is being asked to write down what
+  they are most afraid of; the first thing they should be able to find is what
+  happens to it. Owned by Daniel, not by Code.
 
 A1 belongs here rather than in a gate of its own: it is the same trigger as the
 other three, and it already existed as A1 before the cluster did. A second row
@@ -95,11 +99,12 @@ into whatever opens, is being taught to trust a link shape that the rest of
 this product spends its time teaching them to distrust. The first time someone
 outside the build is asked to trust this, all three have to be true.
 
-**None of the four is independently skippable, and any one of them open holds
-the other three.** Three out of four is not three-quarters of the way there; it
-is a sound domain serving an app on an unsupported tier, or a hardened endpoint
-whose invitation lands in spam, or a clinician clicking Accept on text no
-lawyer has read.
+**None of the five is independently skippable, and any one of them open holds
+the other four.** Four out of five is not four-fifths of the way there; it is a
+sound domain serving an app on an unsupported tier, or a hardened endpoint whose
+invitation lands in spam, or a clinician clicking Accept on text no lawyer has
+read, or a client asked to write down what frightens them by a product with no
+statement of what becomes of it.
 
 ### Accepted risks — the convention
 
@@ -222,7 +227,7 @@ entry would need reopening.
 
 | # | Item |
 |---|---|
-| C1 ⚖ | Privacy notice and terms for the client app, plain language, versioned, accepted at first sign-in and recorded. |
+| C1 ⚖ | **Privacy policy and terms of service.** Plain language, versioned, accepted at first sign-in and recorded. **Part of the first-invite cluster.** These are legal documents for a HIPAA business associate handling clinical data, not boilerplate to generate. **Owner: Daniel. Completion condition: requires health care attorney review** — the same shape as A1, and not a Code item. Both need public URLs: the Identity Platform OAuth consent screen depends on them if a Google sign-in provider is ever added (`gcp-setup.md` §7 step 5), so that is downstream of this, not independent of it. |
 | C2 | The "not your therapist" and crisis framing already in the client app is reviewed once by a licensed clinician who is not the author. Name and date recorded in the repo. |
 | C3 | The join screen states in plain words what the clinician can see and that the client can revoke it (proposal 02 §4) — already specified; confirm it shipped. |
 
@@ -236,7 +241,7 @@ A7 → A1 template → A2 and A3 together (Prompt 11 moves auth and the database
 
 A9 is not in that sequence because it is not a step in it: the key is backed up before the secret version is created, which is before anything else on this list can run.
 
-A1, A4, A8 and A10 are the cluster above and fire together at the first invite.
+A1, A4, A8, A10 and C1 are the cluster above and fire together at the first invite.
 
 A8 sits where it does deliberately: it is the last thing before a real client's data exists, and it is the only item on this list that gets cheaper to do the earlier it is done.
 
