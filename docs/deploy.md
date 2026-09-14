@@ -340,41 +340,228 @@ new revision with different environment variables — a trap worth knowing befor
 you try the latter and wonder why nothing changed. The Dockerfiles take them as
 `--build-arg`; all are public by design.
 
-### Custom domains — a decision for Daniel, not one I made
+### Custom domains — no domain mapping
 
-`us-west1` **is** on the supported region list for Cloud Run domain mappings,
-so the mapping route is available:
+Cloud Run domain mappings would be free and `us-west1` supports them. They are
+rejected, and the reason is the standing rule in Prompt 0: **a Google service
+entering the deploy path must be both on the HIPAA covered-products list and
+generally available.** Domain mappings fail the second test.
+
+> "This feature is subject to the 'Pre-GA Offerings Terms' in the General
+> Service Terms section of the Service Specific Terms."
+>
+> — Cloud Run, *Mapping custom domains*
+
+Google's HIPAA guidance says not to use Pre-GA offerings in connection with
+PHI. These origins serve the shell that carries the invite link and the
+authenticated session. Having rejected Firebase Hosting on the covered-products
+list and then accepted a Pre-GA offering in the same path would be inconsistent
+in a way a security questionnaire would find before we did.
+
+Two other documented limitations point the same way and are not the reason:
+Google calls domain mappings "not production-ready", and TLS 1.0 and 1.1 cannot
+be disabled on them. **The Pre-GA status is the disqualifier**; those are
+corroboration. The next person to notice the $0 price tag should find this
+paragraph.
+
+### Before launch: the default run.app URLs
+
+Right now, and only right now, both services are reached at their generated
+`*.run.app` URLs. Generally available, free, no custom domain, no load
+balancer.
+
+**This is a pre-launch arrangement, not the launch one, and should not be read
+as hardened.** Google publishes no minimum TLS version for `*.run.app`, and an
+SSL policy cannot be attached to it — there is no target proxy in that path to
+attach one to. So the TLS floor on those hostnames is whatever Google's front
+end offers, and it is not something this project controls or can evidence.
+
+That is acceptable while the only people using it are building it. It stops
+being acceptable at the trigger in gate **A10**.
+
+### At launch: a global external Application Load Balancer
+
+One load balancer, both hostnames, TLS 1.2 floor. Roughly **$18.25/month** for
+the forwarding rule; data processing is negligible at beta scale.
+
+**Written now, executed later, deliberately.** At the gate this happens
+alongside the A4 sender and the A8 tier change, and that is the wrong moment to
+be reading about URL maps for the first time.
+
+#### 1. Serverless NEGs — one per service
+
+A serverless network endpoint group is how a load balancer points at Cloud Run.
+Regional, in the services' own region.
 
 ```sh
-gcloud beta run domain-mappings create --service=web   --domain=app.courageloop.com --region=us-west1
+gcloud compute network-endpoint-groups create web-neg \
+  --region=us-west1 --network-endpoint-type=serverless --cloud-run-service=web
+
+gcloud compute network-endpoint-groups create clinician-neg \
+  --region=us-west1 --network-endpoint-type=serverless --cloud-run-service=clinician
 ```
 
-But the same page carries two documented limitations, and you asked to be told
-rather than have the tradeoff decided:
+#### 2. Backend services
 
-1. **"Due to latency issues, they are not production-ready and are not
-   supported at General Availability. At the moment, this option is not
-   recommended for production services."** Google's words, about domain
-   mappings.
-2. **TLS 1.0 and 1.1 cannot be disabled on a domain mapping.** No PHI transits
-   these origins — the browser loads the shell and then calls
-   `api.courageloop.com` directly — so this is not a breach of the BAA. It is
-   still a control you would rather have than not, and one a security
-   questionnaire will ask about.
+```sh
+gcloud compute backend-services create web-backend \
+  --global --load-balancing-scheme=EXTERNAL_MANAGED
+gcloud compute backend-services add-backend web-backend --global \
+  --network-endpoint-group=web-neg --network-endpoint-group-region=us-west1
 
-The alternative is a **global external Application Load Balancer**, which is
-what Google recommends for production: custom TLS policy (so 1.2 minimum),
-Cloud Armor if wanted, and both hostnames behind one load balancer using host
-rules.
+gcloud compute backend-services create clinician-backend \
+  --global --load-balancing-scheme=EXTERNAL_MANAGED
+gcloud compute backend-services add-backend clinician-backend --global \
+  --network-endpoint-group=clinician-neg --network-endpoint-group-region=us-west1
+```
 
-**Cost:** one global forwarding rule is **$0.025/hour ≈ $18.25/month**, and
-that first rule covers up to five, so both hostnames share it. Data processing
-is charged per region and is negligible at beta scale. So roughly **$18–20 a
-month** against **$0** for domain mappings.
+No health checks: serverless NEG backends do not take them, and `gcloud` will
+refuse if you add one.
 
-Against ~$12/month for the database, that is not a rounding error, which is why
-it is your call. **If the mapping hits a limitation at execution, stop and
-report rather than switching route mid-flight.**
+#### 3. The URL map — host rules for both names
+
+```sh
+gcloud compute url-maps create courageloop-lb --default-service=clinician-backend
+
+gcloud compute url-maps add-path-matcher courageloop-lb \
+  --path-matcher-name=web --default-service=web-backend \
+  --new-hosts=app.courageloop.com
+
+gcloud compute url-maps add-path-matcher courageloop-lb \
+  --path-matcher-name=clinician --default-service=clinician-backend \
+  --new-hosts=courageloop.com,www.courageloop.com
+```
+
+The apex is the default service, so an unmatched Host header reaches the
+clinician app rather than nothing.
+
+#### 4. The reserved address, and DNS
+
+Reserve the address **before** the certificate: a Google-managed certificate
+will not validate until the name already resolves to it.
+
+```sh
+gcloud compute addresses create courageloop-ip --global
+gcloud compute addresses describe courageloop-ip --global --format='value(address)'
+```
+
+Then, at the registrar, with that address:
+
+| Record | Name | Value |
+|---|---|---|
+| A | `courageloop.com` (apex) | the reserved IPv4 |
+| A | `app.courageloop.com` | the same address |
+| CNAME | `www.courageloop.com` | `courageloop.com` |
+
+Both hostnames point at the same load balancer; the host rules in step 3
+separate them. Wait for DNS before step 6 — `dig +short app.courageloop.com`
+should return the reserved address.
+
+#### 5. The SSL policy — the TLS floor
+
+```sh
+gcloud compute ssl-policies create courageloop-tls \
+  --profile=MODERN --min-tls-version=1.2
+```
+
+**`MODERN` with an explicit 1.2 floor, not `RESTRICTED`.** Both give the same
+minimum version. `RESTRICTED` additionally narrows the cipher suites to a
+compliance-oriented set, which is a real compatibility cost on older mobile
+browsers and buys nothing here — the requirement is a version floor, and
+picking the tighter profile because it sounds stronger is how a client on an
+old Android phone silently cannot sign in. `COMPATIBLE` is the default and
+permits TLS 1.0, which is the thing being fixed.
+
+#### 6. The certificate and the proxies
+
+```sh
+gcloud compute ssl-certificates create courageloop-cert --global \
+  --domains=courageloop.com,www.courageloop.com,app.courageloop.com
+
+gcloud compute target-https-proxies create courageloop-https-proxy \
+  --url-map=courageloop-lb \
+  --ssl-certificates=courageloop-cert \
+  --ssl-policy=courageloop-tls
+
+gcloud compute forwarding-rules create courageloop-https --global \
+  --target-https-proxy=courageloop-https-proxy \
+  --address=courageloop-ip --ports=443 \
+  --load-balancing-scheme=EXTERNAL_MANAGED
+```
+
+**The certificate takes 15 to 60 minutes to provision and can take longer**,
+and it sits in `PROVISIONING` until DNS resolves to the forwarding rule. Watch
+it rather than guessing:
+
+```sh
+gcloud compute ssl-certificates describe courageloop-cert --global \
+  --format='value(managed.status, managed.domainStatus)'
+```
+
+`ACTIVE`, with every domain `ACTIVE`, is the finished state. A domain stuck at
+`FAILED_NOT_VISIBLE` means DNS has not propagated yet.
+
+#### 7. Redirect HTTP to HTTPS
+
+Create a redirect URL map from a YAML file — `gcloud compute url-maps create`
+has no flag for a redirect-only map.
+
+```sh
+cat > /tmp/redirect.yaml <<'CONF'
+name: courageloop-redirect
+defaultUrlRedirect:
+  httpsRedirect: true
+  redirectResponseCode: MOVED_PERMANENTLY_DEFAULT
+CONF
+
+gcloud compute url-maps import courageloop-redirect --global --source=/tmp/redirect.yaml
+
+gcloud compute target-http-proxies create courageloop-http-proxy \
+  --url-map=courageloop-redirect
+
+gcloud compute forwarding-rules create courageloop-http --global \
+  --target-http-proxy=courageloop-http-proxy \
+  --address=courageloop-ip --ports=80 \
+  --load-balancing-scheme=EXTERNAL_MANAGED
+```
+
+This second forwarding rule adds no cost: $0.025/hour covers the first five.
+
+#### 8. Lock the services to the load balancer
+
+Once traffic arrives through the balancer, the `*.run.app` URLs are a second
+front door with no SSL policy on it. Close them:
+
+```sh
+gcloud run services update web --region=us-west1 \
+  --ingress=internal-and-cloud-load-balancing
+gcloud run services update clinician --region=us-west1 \
+  --ingress=internal-and-cloud-load-balancing
+```
+
+The API keeps its own ingress setting; this is about the two app origins.
+
+#### 9. Verify the floor took effect — do not assume it attached
+
+Attaching a policy and having a policy in force are different claims, and only
+one of them is testable. Test it.
+
+```sh
+# Must FAIL. A handshake here means the policy is not in force.
+openssl s_client -connect app.courageloop.com:443 -tls1_1 </dev/null
+
+# Must SUCCEED.
+openssl s_client -connect app.courageloop.com:443 -tls1_2 </dev/null | head -5
+
+# And confirm which policy the proxy is actually using.
+gcloud compute target-https-proxies describe courageloop-https-proxy \
+  --format='value(sslPolicy)'
+```
+
+Run all three against **both** hostnames. The evidence for gate A10 is **the
+TLS 1.1 refusal**, not the 1.2 success — a successful handshake at 1.2 is
+equally consistent with a policy that was never attached.
+
 
 ### Not a PHI hop — the claim to confirm, not assume
 
