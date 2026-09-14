@@ -12,6 +12,32 @@ time.
 **Hostnames of record.** `courageloop.com` — public site and clinician app ·
 `app.courageloop.com` — client PWA · `api.courageloop.com` — the API.
 
+## Which of these commands have actually been run
+
+**Almost none of them.** Every command below was written carefully and, with
+the exceptions listed, has never been executed. Three failed on first contact
+in a single evening — the missing quota project on the Admin API calls, the
+`\` continuations in PowerShell, and `gcloud builds submit --file`, which is
+not a flag that exists.
+
+That is the written/configured/verified vocabulary from
+[`go-live-gate.md`](go-live-gate.md) applied to this runbook, and the honest
+state is:
+
+| | Status |
+|---|---|
+| Everything in this document | **written, not executed** |
+| `packages/api/scripts/verify-cloudsql.sh` (§6) | **written**; its four refusal guards were exercised locally, the script as a whole never was |
+| `deploy/gcp/cloudbuild.api.yaml`, `cloudbuild.verify.yaml` | **written**; both parse, neither has been submitted |
+| `gcp-setup.md` steps 1–5, 7 | **configured** — done in the console |
+| The Identity Platform MFA `PATCH` and the config `GET` | **verified** — both run, output recorded |
+
+**Treat an unexecuted command as a draft.** If one fails, the first question is
+whether the command is wrong, not whether the project is misconfigured — that
+has been the answer three times out of three so far. Report the failure and the
+document gets fixed; do not work around it silently, because the next person
+inherits the workaround and not the reason.
+
 ## Run this from Git Bash or WSL, not PowerShell
 
 Every command below is `sh` — twenty-four of them, and six sections' worth use
@@ -53,14 +79,32 @@ gcloud artifacts repositories create courageloop \
   --repository-format=docker --location=us-west1 \
   --description="API images"
 
-# From the repo root. The Dockerfile is packages/api/Dockerfile and the context
-# is the whole repo, because the image carries docs/theory and docs/legal.
+# From the repo root, and through a build config rather than --tag. See below.
 gcloud builds submit \
   --region=us-west1 \
-  --tag=us-west1-docker.pkg.dev/courageloop-prod/courageloop/api:$(git rev-parse --short HEAD) \
-  --file=packages/api/Dockerfile \
+  --config=deploy/gcp/cloudbuild.api.yaml \
+  --substitutions=_TAG=$(git rev-parse --short HEAD) \
   .
 ```
+
+**Why a config and not `--tag`, stated here so nobody reintroduces it.**
+`gcloud builds submit --tag` requires a Dockerfile at the **root** of the
+uploaded source, and **there is no `--file` flag** to point it elsewhere —
+passing one fails with *"unrecognized arguments: --file"*. Ours lives at
+`packages/api/Dockerfile` and needs the repo root as its context, because the
+image copies `docs/theory` and `docs/legal`. Dockerfile not at the root,
+context at the root: that combination is what a build config is for. Same
+reason §6 needs one.
+
+`deploy/gcp/cloudbuild.api.yaml` builds the **default** stage — no `--target`,
+because the Dockerfile puts `verify` before the runtime stage precisely so the
+default is the server.
+
+**The tag is passed in.** `$SHORT_SHA` is not available to a config run this
+way: Cloud Build populates it only when the source comes from a connected
+repository, and `builds submit` uploads a local directory. `_TAG` has no
+default, so forgetting it fails the build rather than quietly producing an
+image nobody can tie to a commit.
 
 Tag with the commit, never `latest`: a revision should name the code it is
 running, and `latest` makes "which build is live" unanswerable at the moment
@@ -240,7 +284,10 @@ still the server.
 target needs a build config — `deploy/gcp/cloudbuild.verify.yaml` is that file:
 
 ```sh
-gcloud builds submit --region=us-west1 --config=deploy/gcp/cloudbuild.verify.yaml .
+gcloud builds submit --region=us-west1 \
+  --config=deploy/gcp/cloudbuild.verify.yaml \
+  --substitutions=_TAG=$(git rev-parse --short HEAD) \
+  .
 ```
 
 Then the job:
