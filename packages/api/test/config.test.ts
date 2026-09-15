@@ -39,6 +39,74 @@ describe('loadConfig', () => {
     expect(() => loadConfig(without)).toThrow(/FIELD_ENCRYPTION_KEY/);
   });
 
+  /**
+   * The shape that broke production.
+   *
+   * `DATABASE_URL` was `z.string().url()`, which is `new URL()`, and the Cloud
+   * SQL Unix-socket form has an empty authority — the host is in `?host=`,
+   * after the path. `new URL()` throws on it, so `config()` threw before
+   * `listen()`, the container never bound, and Cloud Run reported a port
+   * timeout that named nothing useful.
+   *
+   * Nothing caught it because every test used a local TCP URL, which IS a
+   * valid WHATWG URL. The socket form existed only in production. So the case
+   * that broke it is now the case that is covered.
+   */
+  describe('the Cloud SQL socket connection string', () => {
+    const SOCKET =
+      'postgresql://ledger_api:pw@/ledger?host=/cloudsql/courageloop-prod:us-west1:courageloop-db';
+
+    it('is rejected by z.string().url(), which is why .url() was the wrong check', () => {
+      // Not testing our code — pinning the fact the fix rests on.
+      expect(() => new URL(SOCKET)).toThrow();
+    });
+
+    it('is accepted for DATABASE_URL', () => {
+      expect(loadConfig({ ...base, DATABASE_URL: SOCKET }).DATABASE_URL).toBe(SOCKET);
+    });
+
+    it('is accepted for DATABASE_MIGRATE_URL', () => {
+      const c = loadConfig({ ...base, DATABASE_MIGRATE_URL: SOCKET });
+      expect(c.DATABASE_MIGRATE_URL).toBe(SOCKET);
+    });
+
+    it('still accepts the ordinary TCP form', () => {
+      const tcp = 'postgresql://user:pass@localhost:5432/ledger';
+      expect(loadConfig({ ...base, DATABASE_URL: tcp }).DATABASE_URL).toBe(tcp);
+      expect(loadConfig({ ...base, DATABASE_URL: tcp.replace('postgresql', 'postgres') })).toBeTruthy();
+    });
+  });
+
+  /**
+   * The parser is permissive on its own — it reads "not a url" as a database
+   * name — so the scheme check and the host/database requirements are what
+   * make this a validator rather than a formality.
+   */
+  describe('what a connection string still has to be', () => {
+    for (const [why, value] of [
+      ['not a connection string at all', 'not a url'],
+      ['the wrong scheme', 'https://example.com/ledger'],
+      ['empty', ''],
+      ['a scheme and nothing else', 'postgresql://'],
+      ['no database', 'postgresql://user:pw@localhost:5432'],
+    ] as const) {
+      it(`refuses ${why}`, () => {
+        expect(() => loadConfig({ ...base, DATABASE_URL: value })).toThrow(/DATABASE_URL/);
+      });
+    }
+
+    it('never puts the connection string in the error message', () => {
+      // It carries a password.
+      const secret = 'postgresql://user:hunter2-do-not-log@/ledger';
+      try {
+        loadConfig({ ...base, DATABASE_URL: secret });
+        expect.unreachable('should have thrown');
+      } catch (e) {
+        expect((e as Error).message).not.toContain('hunter2-do-not-log');
+      }
+    });
+  });
+
   it('never puts a value in the error message', () => {
     try {
       loadConfig({ ...base, SUPABASE_URL: 'super-secret-not-a-url' });

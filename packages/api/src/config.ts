@@ -3,6 +3,7 @@
  * refuses to boot on a bad config rather than failing on the first request.
  */
 import { z } from 'zod';
+import pgConnectionString from 'pg-connection-string';
 import { loadEnv } from './env.js';
 
 // The root .env, wherever this was launched from. Real env vars still win.
@@ -12,6 +13,57 @@ const bool = z
   .string()
   .optional()
   .transform((v) => v === '1' || v === 'true');
+
+/**
+ * A Postgres connection string — validated by parsing it, not by `.url()`.
+ *
+ * **`z.string().url()` is `new URL()`, and a libpq URI is not a WHATWG URL.**
+ * The Cloud SQL Unix-socket form has an *empty authority* — the host lives in
+ * `?host=`, after the path:
+ *
+ *     postgresql://ledger_api:PW@/ledger?host=/cloudsql/project:region:instance
+ *
+ * `new URL()` throws on that. So `.url()` rejected the one connection string
+ * production actually uses, `config()` threw before `listen()`, the container
+ * never bound, and Cloud Run reported *"failed to start and listen on
+ * PORT=8080"* — an error naming the port and saying nothing about validation.
+ *
+ * Every test passed throughout, because a local URL is
+ * `postgresql://user:pass@localhost:5432/ledger`, which *is* a valid WHATWG
+ * URL. The socket form exists only in production. Correct in a checkout,
+ * wrong in a container, green the whole way.
+ *
+ * This parses with **the same parser the driver uses** — `pg-connection-string`
+ * is what `pg` itself parses connection strings with — so the validator and
+ * the consumer agree by construction rather than by two separate opinions
+ * about what a connection string looks like.
+ *
+ * The parser alone is not enough: it is permissive, and happily reads
+ * `"not a url"` as a database name. Hence the scheme check first, and the
+ * requirement that a host and a database actually came out.
+ */
+const postgresUrl = z.string().superRefine((value, ctx) => {
+  const reject = (message: string) => ctx.addIssue({ code: 'custom', message });
+
+  if (!/^postgres(ql)?:\/\//i.test(value)) {
+    reject('must be a postgresql:// or postgres:// connection string');
+    return;
+  }
+
+  let parsed: ReturnType<typeof pgConnectionString.parse>;
+  try {
+    parsed = pgConnectionString.parse(value);
+  } catch {
+    // Never echo the value or the parser's message: this string holds a password.
+    reject('is not a parseable Postgres connection string');
+    return;
+  }
+
+  // A socket connection takes its host from `?host=`; a TCP one from the
+  // authority. Either way, something has to have come out.
+  if (!parsed.host) reject('names no host — set one in the authority, or in ?host= for a Unix socket');
+  if (!parsed.database) reject('names no database');
+});
 
 const splitOrigins = (raw: string): string[] =>
   raw
@@ -42,8 +94,8 @@ const schema = z
       .string()
       .default('https://courageloop.com,https://app.courageloop.com,https://api.courageloop.com'),
 
-    DATABASE_URL: z.string().url(),
-    DATABASE_MIGRATE_URL: z.string().url().optional(),
+    DATABASE_URL: postgresUrl,
+    DATABASE_MIGRATE_URL: postgresUrl.optional(),
     /** PEM of a private CA to pin for the database TLS connection. Optional. */
     DATABASE_CA_CERT: z.string().optional(),
 
