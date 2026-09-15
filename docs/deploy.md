@@ -326,7 +326,7 @@ gcloud run deploy api \
   --service-account="$SA" \
   --min-instances=0 --max-instances=4 \
   --add-cloudsql-instances=courageloop-prod:us-west1:courageloop-db \
-  --set-env-vars=NODE_ENV=production,AUTH_PROVIDER=identity-platform,GCP_PROJECT_ID=courageloop-prod,DOCS_ROOT=/app,ASSISTANT_ENABLED=false,JOBS_ENABLED=true,CORS_ORIGINS=https://courageloop.com\,https://app.courageloop.com\,https://api.courageloop.com \
+  --set-env-vars=NODE_ENV=production,AUTH_PROVIDER=identity-platform,GCP_PROJECT_ID=courageloop-prod,DOCS_ROOT=/app,ASSISTANT_ENABLED=false,JOBS_ENABLED=false,CORS_ORIGINS=https://courageloop.com\,https://app.courageloop.com\,https://api.courageloop.com \
   --set-secrets=DATABASE_URL=database-url:latest,DATABASE_MIGRATE_URL=database-migrate-url:latest,FIELD_ENCRYPTION_KEY=field-encryption-key:latest \
   --no-allow-unauthenticated
 ```
@@ -347,6 +347,7 @@ needs an org-policy exception first.
 | `DATABASE_MIGRATE_URL` | Secret `database-migrate-url` | as above |
 | `FIELD_ENCRYPTION_KEY` | Secret `field-encryption-key` | local is a throwaway in `.env` |
 | `ASSISTANT_ENABLED` | literal `false` | ships off, and stays off until gate A5 |
+| `JOBS_ENABLED` | literal **`false`** at this step | **turned on as the closing step of §6**, not here — the jobs query a role that does not exist until then |
 | `AUTH_TEST_MODE` | **absent** | config refuses to boot with it in production |
 | `ALLOW_DESTRUCTIVE_TESTS` | **absent** | test-only, and never set anywhere near this |
 | `SUPABASE_*` | **absent** | the provider is Identity Platform here |
@@ -384,9 +385,17 @@ Two consequences of that window, both harmless and both easy to misread:
   survives, but the logs will carry a recurring error until §6 runs. It is
   expected, and it stops on its own.
 
-If §6 is going to be a long way off, `--set-env-vars=JOBS_ENABLED=false` on the
-§4 deploy silences the second one; the first is a property of `/health` and
-stays.
+**This is why §4 deploys with `JOBS_ENABLED=false`** and §6 turns it on as its
+closing step. Two reasons, and the second is the one that matters:
+
+- **The window is not reliably short.** Deploys stop between steps; this one
+  already has, twice.
+- **Gate B9 reads exactly these logs.** A recurring job error is not PHI and
+  does not invalidate the check, but it is noise in the evidence — and it is
+  the kind of noise someone chases.
+
+A job should start when the thing it queries exists. The `/health` 503 is a
+property of the route and stays either way.
 
 ## 5. Migrations
 
@@ -472,6 +481,23 @@ already runs the RLS suite against vanilla PostgreSQL on every push, so the
 schema's portability is largely established — what this adds is that role
 creation, the migrations and RLS behave on Google's build. A local-Postgres run
 is not evidence for this gate; it proves the SQL, not this instance.
+
+### Closing step of §6 — turn the jobs on
+
+**Only after the verification above has passed.** `ledger_api` now exists, so
+the scheduled jobs have something to query:
+
+```sh
+gcloud run services update api --region=us-west1   --update-env-vars=JOBS_ENABLED=true
+```
+
+§4 deployed with `JOBS_ENABLED=false` deliberately. **A job should start when
+the thing it queries exists** — before that it ticks every fifteen minutes,
+fails, and logs, which is noise in the logs that gate B9 reads and the kind of
+noise someone chases.
+
+This is a step rather than a flag set earlier and forgotten, because the
+interval between §4 and §6 is not reliably short.
 
 
 ## 7. Public ingress — turning domain-restricted sharing off for one project
