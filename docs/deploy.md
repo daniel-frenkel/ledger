@@ -343,7 +343,7 @@ needs an org-policy exception first.
 | `GCP_PROJECT_ID` | literal `courageloop-prod` | unset locally |
 | `DOCS_ROOT` | literal `/app` | unset locally — the walk finds the checkout |
 | `CORS_ORIGINS` | the three hostnames of record | local adds `localhost` automatically, outside production only |
-| `DATABASE_URL` | Secret `database-url` | local points at Docker or Supabase, over TCP not a socket |
+| `DATABASE_URL` | Secret `database-url` | local points at Docker or Supabase, over TCP not a socket — **and see the note below: the role it names does not exist yet** |
 | `DATABASE_MIGRATE_URL` | Secret `database-migrate-url` | as above |
 | `FIELD_ENCRYPTION_KEY` | Secret `field-encryption-key` | local is a throwaway in `.env` |
 | `ASSISTANT_ENABLED` | literal `false` | ships off, and stays off until gate A5 |
@@ -354,6 +354,39 @@ needs an org-policy exception first.
 `AUTH_TEST_MODE` is not merely unset by convention — `config.ts` raises a
 configuration error if it is on with `NODE_ENV=production`, so a revision that
 carried it would fail to start.
+
+### `DATABASE_URL` names a role that does not exist until §6
+
+**This is fine, and it is not obvious, so it is written down rather than left
+to be worked out.** §4 deploys with `DATABASE_URL` naming `ledger_api`; §6 is
+what *creates* `ledger_api`. Between the two, the service is running with
+credentials for a Postgres role that does not exist.
+
+**The API connects lazily, so nothing fails.** Checked in the code rather than
+reasoned about — the boot path is `config()` → `build()` → `listen()` →
+`startJobs()` in `src/index.ts`, and none of those touches the database.
+`build()` registers plugins and routes; the connection pool is created by
+`getPool()` on first use; `startJobs()` only registers cron schedules. Nothing
+queries at boot, so the revision starts.
+
+Two consequences of that window, both harmless and both easy to misread:
+
+- **`/health` returns 503.** It calls `ping()`, which runs `SELECT 1` and will
+  fail until §6. The route catches and answers `503`, so the process is fine —
+  **but do not add a Cloud Run startup or liveness probe against `/health`
+  before §6 has run.** The §4 command deliberately sets none, so the default
+  TCP startup probe applies and only needs the container to listen. An HTTP
+  probe on `/health` would fail the revision, and the failure would name
+  nothing useful.
+- **The nudge job logs an error every 15 minutes.** `CRON_NUDGE_TICK` is
+  `*/15 * * * *` and the tick queries. Both schedulers wrap their work in
+  `try/catch` and log — `jobs/index.ts` and `jobs/purge.ts` — so the process
+  survives, but the logs will carry a recurring error until §6 runs. It is
+  expected, and it stops on its own.
+
+If §6 is going to be a long way off, `--set-env-vars=JOBS_ENABLED=false` on the
+§4 deploy silences the second one; the first is a property of `/health` and
+stays.
 
 ## 5. Migrations
 
