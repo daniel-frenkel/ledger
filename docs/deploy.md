@@ -201,7 +201,12 @@ transcript could capture.
 ### 2.2 — Then the secret versions
 
 **Do not run this until the password check in [`gcp-setup.md`](gcp-setup.md) §3
-has passed.** Both connection strings below embed a password into a URI, and a
+has passed, and any unsafe value has been rotated.** On the figures in that
+section there is an **86.9% chance at least one of the two existing passwords
+carries a `+` or `/`**, and rotating *before* this section runs costs one
+secret version and one Admin API call. Rotating after it — once these two
+connection-string secrets exist and a revision is running — is a four-step
+ordering with an unavoidable outage in it. Same work, different price. Both connection strings below embed a password into a URI, and a
 password containing `/`, `+`, `@`, `:`, `#`, `?` or `%` does not survive that.
 The failure arrives at deploy or on the first query as an authentication or
 host error, pointing at the database or the socket rather than at the
@@ -550,7 +555,26 @@ assumed before anyone relies on it.
    identities are allowed to be added to IAM policies."* An explicit
    **Override parent's policy** that allows all values reaches the same place.
 
-   > **Which of the two to use is not settled by the documentation.** The
+   > **Reasoning, not citation — but it resolves the button.** The two Google
+   > statements are about different things, and both are true at once: the
+   > *constraint's* default is permissive, **and** Google set an enforced
+   > *policy* at the org node for organisations created on or after 3 May 2024.
+   > `courageloop.com` was created 11 September 2026, so there is a real parent
+   > policy, and the constraint's default is **not** what this project is
+   > inheriting. "Inherit parent's policy" therefore takes the org's enforced
+   > policy; **"Google-managed default" takes the constraint's default, which is
+   > permissive.** So Google-managed default should be the one.
+   >
+   > **Try it and confirm before granting anything** — that half stands
+   > regardless, because the reasoning above is reasoning.
+   >
+   > **What moves §7 from configured to verified:** record which button was
+   > pressed, and that the `allUsers` binding in step 5 then succeeded. The
+   > binding is the test. If Google-managed default does not work, fall back to
+   > **Override parent's policy** with an allow-all rule and record *that*
+   > instead — the effect on the project is the same either way.
+   >
+   > **The older framing, kept because it is the evidence for the above.** The
    > console description supports "Google-managed default" being permissive;
    > the docs separately say that for organisations created on or after 3 May
    > 2024 — which includes this one — the constraint *"is enforced by default,
