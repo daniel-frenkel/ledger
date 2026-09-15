@@ -28,6 +28,8 @@ state is:
 | | Status |
 |---|---|
 | §1, and `deploy/gcp/cloudbuild.api.yaml` | **verified 14 Sept 2026** — `api:9ec4cea` built and pushed |
+| §3, the service account | **verified 15 Sept 2026** — `api-runtime`, three roles, nothing else |
+| §7, public ingress | **deferred** — not a prerequisite; §4 deploys private |
 | Everything else in this document | **written, not executed** |
 | `packages/api/scripts/verify-cloudsql.sh` (§6) | **written**; its four refusal guards were exercised locally, the script as a whole never was |
 | `deploy/gcp/cloudbuild.verify.yaml` | **written**; it parses, it has never been submitted |
@@ -282,7 +284,11 @@ name, never the payload.
 `db-owner-password` and `ledger-api-password` already exist from
 `gcp-setup.md` §3; the two URLs above read them rather than restating them.
 
-## 3. The service account
+## 3. The service account — VERIFIED 15 September 2026
+
+`api-runtime` exists with exactly three roles — `cloudsql.client`,
+`secretmanager.secretAccessor`, `identitytoolkit.admin` — and nothing else.
+Executed and confirmed against the project IAM policy.
 
 One service account for the API, with exactly what it needs:
 
@@ -430,25 +436,134 @@ creation, the migrations and RLS behave on Google's build. A local-Postgres run
 is not evidence for this gate; it proves the SQL, not this instance.
 
 
-## 7. Public ingress — an org-policy exception, project-scoped
+## 7. Public ingress — turning domain-restricted sharing off for one project
+
+> **Deferred, and NOT a prerequisite for anything above.** §4 deploys with
+> `--no-allow-unauthenticated`, so the service comes up private and works. The
+> API is reachable by the deploy itself, by the verification job, and by
+> anything with credentials. Public ingress is a later step and nothing in
+> §1–§6 waits on it. Do not stall here.
 
 A public Cloud Run service needs an `allUsers` invoker binding, and
-`constraints/iam.allowedPolicyMemberDomains` (domain-restricted sharing) will
-refuse it. **The org policy stays as it is.** The exception is scoped to this
-one project.
+`constraints/iam.allowedPolicyMemberDomains` (domain-restricted sharing, DRS)
+will refuse it. **The org policy stays as it is.** Whatever is done, is done to
+this one project.
 
-**Daniel runs this; it is not something to attempt from a script.**
+### What this actually does — it is not a narrow exception
 
-1. Console → **IAM & Admin → Organization policies**, with the **organisation**
-   `courageloop.com` selected.
-2. Find **Domain restricted sharing**
-   (`constraints/iam.allowedPolicyMemberDomains`).
-3. **Manage policy** → scope the edit to the **project** `courageloop-prod`
-   (the selector at the top — this is the step that keeps the change off the
-   organisation).
-4. **Override parent's policy** → **Add rule** → **Custom** → allow
-   `allUsers` / `allAuthenticatedUsers` for this project only.
-5. Save, then:
+This section used to describe adding a rule that allows `allUsers` for
+`courageloop-prod`. **That mechanism does not exist**, and the honest
+description is wider:
+
+> **There is no value of `iam.allowedPolicyMemberDomains` that permits
+> `allUsers`.** Google's documentation is explicit — *"Adding exceptions is
+> only possible if you're using custom organization policies to implement
+> domain restricted sharing"*, and of the legacy constraint, *"This constraint
+> doesn't let you configure exceptions for specific principals."*
+
+The console's own description — that `allowed_values` may contain
+"organization principal sets" — is about *which organisations'* identities are
+allowed. It is adjacent to the question and does not answer it: a principal set
+names an organisation, and `allUsers` is not one.
+
+So the only thing the managed constraint can do at project scope is **stop
+being enforced there**. That is what permits the binding, and it means:
+
+**§7 removes domain restriction from `courageloop-prod`. It does not add a
+public-access exception.** Inside that project, any identity can be added to an
+IAM policy — not only `courageloop.com`. That is a wider change than a narrow
+exception and it must not be written up as one.
+
+### The residual, and what compensates for it
+
+The residual is real: within this one project, nothing stops an IAM binding to
+an outside identity.
+
+What makes it acceptable rather than merely tolerable:
+
+- **The org policy is untouched everywhere else.** Every other project in the
+  organisation — the seven in the inventory above, and anything created later —
+  keeps DRS enforced. This is one node, chosen.
+- **The project holds exactly one public binding, by design**: `allUsers` as
+  `run.invoker` on the two app services. Everything else in it is a service
+  account this repository creates and `docs/deploy.md` §3 lists.
+- **Nothing in the project relies on DRS for its security.** What protects data
+  here is the bearer token on every request, RLS in Postgres, and the
+  issuer-and-audience check — not who may appear in an IAM policy. DRS was
+  never load-bearing for this design; it is defence in depth that this one
+  project gives up.
+
+### What would change this
+
+**Move to a custom organization policy with a CEL exception** if any of these
+becomes true:
+
+- A second person gets IAM access to `courageloop-prod`.
+- The project starts holding bindings beyond the one public invoker and our own
+  service accounts.
+- A security questionnaire asks what restricts identities in the project that
+  serves PHI — "nothing, by configuration" is a true answer and a bad one to
+  give.
+
+The custom path uses `iam.managed.allowedPolicyMembers` or a custom constraint
+with `MemberSubjectMatches(member, ['allUsers', 'allAuthenticatedUsers'])`
+alongside `MemberInPrincipalSet`, which permits **our domain plus those two
+principals specifically** — genuinely the narrow exception this section
+originally claimed.
+
+**It is not free, and one part is undocumented.** Google says *"In most cases,
+you should use the `iam.managed.allowedPolicyMembers` managed constraint
+instead of using a custom organization policy"*, but **the documentation does
+not state what happens when a custom policy and the legacy managed constraint
+are both in force.** Organization policies are evaluated independently, so the
+inference — and it is an inference, not a citation — is that a binding must
+satisfy both, meaning the legacy constraint would still refuse `allUsers` while
+it is enforced on that resource. If that is right, the custom path *also*
+requires the legacy constraint to stop being enforced at this project, and only
+then narrows what is allowed from "anything" to "our domain plus allUsers".
+That is better, and it is more work, and it should be verified rather than
+assumed before anyone relies on it.
+
+### The steps, when the time comes
+
+**Daniel runs these. Not something to attempt from a script.**
+
+1. Console → **IAM & Admin → Organization policies**.
+2. **Change the resource picker FIRST, before opening the policy.** The console
+   lands on the **organisation** — it defaulted to *"Applies to: Organization
+   courageloop.com"* with **Override parent's policy** and **Replace** already
+   selected. Select the project `courageloop-prod` in the picker at the top.
+3. Open **Domain restricted sharing**
+   (`constraints/iam.allowedPolicyMemberDomains`) and **confirm the "Applies
+   to" line names `courageloop-prod`** before touching anything.
+
+   > **Getting step 2 wrong replaces the organisation policy.** The org and
+   > project screens are otherwise identical, and "Applies to" is the only
+   > thing distinguishing them. Read that line twice.
+
+4. At project scope the constraint reads **"Inherit parent's policy"** and
+   offers three options: *Inherit parent's policy*, *Google-managed default*,
+   *Override parent's policy*.
+
+   **Google-managed default** returns the constraint to its unenforced state
+   for this project — the console's own description says *"By default, all user
+   identities are allowed to be added to IAM policies."* An explicit
+   **Override parent's policy** that allows all values reaches the same place.
+
+   > **Which of the two to use is not settled by the documentation.** The
+   > console description supports "Google-managed default" being permissive;
+   > the docs separately say that for organisations created on or after 3 May
+   > 2024 — which includes this one — the constraint *"is enforced by default,
+   > with your domain listed as the only allowed value"*, which describes a
+   > default **policy Google sets at the org node**, not the constraint's own
+   > default. The two statements are about different things and the console is
+   > the one describing the button being pressed. **Try "Google-managed
+   > default" first and confirm the result before granting anything**; if the
+   > binding in step 5 is still refused, use the explicit override instead.
+   > Either way the effect on this project is the same and is the one described
+   > above.
+
+5. Then, and only then:
 
 ```sh
 gcloud run services add-iam-policy-binding api \
@@ -459,6 +574,7 @@ gcloud run services update api --region=us-west1 --allow-unauthenticated
 The API is public because clients call it from a browser; what protects data is
 the bearer token on every request, RLS in Postgres, and the issuer-and-audience
 check — never network reachability.
+
 
 ## 8. The two apps — A6
 

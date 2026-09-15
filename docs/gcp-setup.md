@@ -102,6 +102,33 @@ It becomes a real item only if one of them is spending money. Billing by
 project is being checked separately; if that turns something up it gets raised
 then, on evidence.
 
+### Two service accounts in the project IAM policy that we did not create
+
+Observed 15 September 2026, from the `courageloop-prod` IAM policy. **Observed
+fact, no action.**
+
+| Principal | Roles | Where it came from |
+|---|---|---|
+| `firebase-adminsdk-fbsvc@courageloop-prod.iam.gserviceaccount.com` | `roles/firebase.sdkAdminServiceAgent`, **`roles/iam.serviceAccountTokenCreator`** | auto-created when Identity Platform was enabled |
+| `43998349902@cloudbuild.gserviceaccount.com` | `roles/cloudbuild.builds.builder` | the **legacy** Cloud Build service account, provisioned when the API was enabled |
+
+**`iam.serviceAccountTokenCreator` is worth naming specifically.** It is
+privileged — it lets its holder mint tokens as other service accounts — and
+nobody here asked for it. It arrived with Identity Platform.
+
+The Cloud Build one is **unused**: builds run as `build-runner` via
+`--service-account` (`docs/deploy.md` §1), not as this account.
+
+**This entry exists to make them known, not to queue a cleanup.** Both are
+Google's own provisioning, and **removing service agents breaks things in
+non-obvious ways** — the breakage usually shows up somewhere unrelated, weeks
+later, in a service that quietly depended on the agent. Knowing they are there
+is worth more than tidying them away.
+
+For comparison, the accounts this repository *does* create are
+`api-runtime` and `build-runner`, and `docs/deploy.md` §1 and §3 list every
+role each one holds.
+
 ---
 
 ## 1. Enable the APIs
