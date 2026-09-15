@@ -15,10 +15,11 @@ time.
 ## Which of these commands have actually been run
 
 **Almost none of them.** Every command below was written carefully and, with
-the exceptions listed, has never been executed. Three failed on first contact
+the exceptions listed, has never been executed. Four failed on first contact
 in a single evening — the missing quota project on the Admin API calls, the
-`\` continuations in PowerShell, and `gcloud builds submit --file`, which is
-not a flag that exists.
+`\` continuations in PowerShell, `gcloud builds submit --file` (not a flag
+that exists), and §1 omitting both the Cloud Build enablement and the service
+account the build runs as.
 
 That is the written/configured/verified vocabulary from
 [`go-live-gate.md`](go-live-gate.md) applied to this runbook, and the honest
@@ -26,15 +27,16 @@ state is:
 
 | | Status |
 |---|---|
-| Everything in this document | **written, not executed** |
+| §1, and `deploy/gcp/cloudbuild.api.yaml` | **verified 14 Sept 2026** — `api:9ec4cea` built and pushed |
+| Everything else in this document | **written, not executed** |
 | `packages/api/scripts/verify-cloudsql.sh` (§6) | **written**; its four refusal guards were exercised locally, the script as a whole never was |
-| `deploy/gcp/cloudbuild.api.yaml`, `cloudbuild.verify.yaml` | **written**; both parse, neither has been submitted |
+| `deploy/gcp/cloudbuild.verify.yaml` | **written**; it parses, it has never been submitted |
 | `gcp-setup.md` steps 1–5, 7 | **configured** — done in the console |
 | The Identity Platform MFA `PATCH` and the config `GET` | **verified** — both run, output recorded |
 
 **Treat an unexecuted command as a draft.** If one fails, the first question is
 whether the command is wrong, not whether the project is misconfigured — that
-has been the answer three times out of three so far. Report the failure and the
+has been the answer four times out of four so far. Report the failure and the
 document gets fixed; do not work around it silently, because the next person
 inherits the workaround and not the reason.
 
@@ -65,27 +67,59 @@ document to match the other.**
 
 ---
 
-## 1. Artifact Registry, and the build
+## 1. Artifact Registry, and the build — VERIFIED 14 September 2026
 
-There is no local Docker build in this project's history and none is needed:
-**Cloud Build builds the image**, which verifies the Dockerfile in the same
-step that produces the artifact rather than as a separate errand on somebody's
-laptop.
+**Executed, not merely written.** `api:9ec4cea` is in Artifact Registry, built
+through `deploy/gcp/cloudbuild.api.yaml` with the `build-runner` service
+account. The first thing in either runbook to earn that word by running rather
+than by being read.
+
+Two things it needed that this section did not mention. Both are **steps**,
+not troubleshooting — a runbook that omits them fails for the next person
+exactly as it failed for the first.
 
 ```sh
 gcloud config set project courageloop-prod
 
+# Cloud Build is not enabled by default. gcloud prompts; enabling is benign.
+gcloud services enable cloudbuild.googleapis.com
+
 gcloud artifacts repositories create courageloop \
   --repository-format=docker --location=us-west1 \
   --description="API images"
+
+# The build runs as a service account, and the compute default one has no
+# permissions for this. It fails on the first submit — not at push time — with
+# a permissions error naming an account nobody chose.
+gcloud iam service-accounts create build-runner --display-name="Cloud Build runner"
+
+BR=build-runner@courageloop-prod.iam.gserviceaccount.com
+
+# Three roles, one per thing the build actually does:
+#   write its logs  — required, because both configs set CLOUD_LOGGING_ONLY
+#   push the image  — to the repository created above
+#   read the source — the uploaded directory lands in a staging bucket
+gcloud projects add-iam-policy-binding courageloop-prod \
+  --member="serviceAccount:$BR" --role=roles/logging.logWriter
+gcloud projects add-iam-policy-binding courageloop-prod \
+  --member="serviceAccount:$BR" --role=roles/artifactregistry.writer
+gcloud projects add-iam-policy-binding courageloop-prod \
+  --member="serviceAccount:$BR" --role=roles/storage.objectViewer
 
 # From the repo root, and through a build config rather than --tag. See below.
 gcloud builds submit \
   --region=us-west1 \
   --config=deploy/gcp/cloudbuild.api.yaml \
   --substitutions=_TAG=$(git rev-parse --short HEAD) \
+  --service-account="projects/courageloop-prod/serviceAccounts/$BR" \
   .
 ```
+
+> **Confirm the three roles against what was actually granted.** These are the
+> three this build requires, and why, reconstructed from what it does. If the
+> set that worked differed, correct the list to match it — the point of the
+> section is that someone else can reproduce the build, and a plausible list
+> is not the same as the one that ran.
 
 **Why a config and not `--tag`, stated here so nobody reintroduces it.**
 `gcloud builds submit --tag` requires a Dockerfile at the **root** of the
@@ -164,19 +198,89 @@ transcript could capture.
 
 ### 2.2 — Then the secret versions
 
+**Do not run this until the password check in [`gcp-setup.md`](gcp-setup.md) §3
+has passed.** Both connection strings below embed a password into a URI, and a
+password containing `/`, `+`, `@`, `:`, `#`, `?` or `%` does not survive that.
+The failure arrives at deploy or on the first query as an authentication or
+host error, pointing at the database or the socket rather than at the
+encoding. `rand -hex 24` makes them URI-safe by construction; anything created
+before that section said so needs checking first.
+
+**The two URLs are built from secrets that already exist.** Read them back
+rather than asking anyone to remember a password from three days ago — the
+value is in Secret Manager, which is the point of Secret Manager.
+
 ```sh
+API_PW="$(gcloud secrets versions access latest --secret=ledger-api-password)"
+OWNER_PW="$(gcloud secrets versions access latest --secret=db-owner-password)"
+INST=courageloop-prod:us-west1:courageloop-db
+
 # The key from 2.1, pasted from your backup — not generated here.
 gcloud secrets create field-encryption-key --data-file=-
 
-printf '%s' 'postgresql://ledger_api:PASSWORD@/ledger?host=/cloudsql/courageloop-prod:us-west1:courageloop-db' | \
+printf '%s' "postgresql://ledger_api:${API_PW}@/ledger?host=/cloudsql/${INST}" | \
   gcloud secrets create database-url --data-file=-
 
-printf '%s' 'postgresql://postgres:PASSWORD@/ledger?host=/cloudsql/courageloop-prod:us-west1:courageloop-db' | \
+printf '%s' "postgresql://postgres:${OWNER_PW}@/ledger?host=/cloudsql/${INST}" | \
   gcloud secrets create database-migrate-url --data-file=-
 ```
 
+`printf '%s'` rather than `echo`, because `echo` appends a newline and a
+trailing newline inside a connection string is a connection failure whose
+message will not mention newlines.
+
+#### The same thing in PowerShell
+
+The preamble says run this runbook from Git Bash, and the `sh` form above is
+the primary one. This exists because secrets handling is where people deviate
+— pasting from a password manager, working in the shell they already have
+open — and the obvious PowerShell translation is wrong in a way that does not
+announce itself.
+
+**`$value | gcloud secrets create X --data-file=-` appends a newline.** The
+secret is then one byte longer than the password, every use of it fails
+authentication, and nothing in the error says so.
+
+```powershell
+$inst = 'courageloop-prod:us-west1:courageloop-db'
+$apiPw = (gcloud secrets versions access latest --secret=ledger-api-password).Trim()
+$ownerPw = (gcloud secrets versions access latest --secret=db-owner-password).Trim()
+
+function New-SecretFromString([string]$Name, [string]$Value) {
+  $tmp = [System.IO.Path]::GetTempFileName()
+  try {
+    # WriteAllText: UTF-8 with no BOM, and no trailing newline. Set-Content and
+    # Out-File both add one, and a BOM would sit at the front of the secret.
+    [System.IO.File]::WriteAllText($tmp, $Value)
+    gcloud secrets create $Name --data-file=$tmp
+  } finally {
+    Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+  }
+}
+
+New-SecretFromString 'database-url'         "postgresql://ledger_api:$apiPw@/ledger?host=/cloudsql/$inst"
+New-SecretFromString 'database-migrate-url' "postgresql://postgres:$ownerPw@/ledger?host=/cloudsql/$inst"
+```
+
+**Why a temp file rather than a pipe, since the tradeoff is real.** PowerShell
+has no reliable way to pipe a string to a native process without a trailing
+newline — `Write-Output -NoNewline` does not survive the boundary. So the
+choice is a byte-wrong secret or a file that exists briefly. The file is the
+lesser harm and its cost is nameable: **the value touches disk in the user
+temp directory for the length of one `gcloud` call**, in a `finally` so it is
+removed even if the call throws. On a machine where that is not acceptable,
+use Git Bash and the `sh` form, which never writes the value anywhere.
+
+`.Trim()` on the values read back is safe **because the passwords are hex** —
+`0–9a–f` cannot contain meaningful leading or trailing whitespace. It would not
+be safe for an arbitrary password, which is one more reason the alphabet is
+fixed in `gcp-setup.md` §3.
+
+Neither form prints a password. `gcloud secrets create` echoes the resource
+name, never the payload.
+
 `db-owner-password` and `ledger-api-password` already exist from
-`gcp-setup.md` §3; the two URLs above embed them.
+`gcp-setup.md` §3; the two URLs above read them rather than restating them.
 
 ## 3. The service account
 

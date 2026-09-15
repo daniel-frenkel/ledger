@@ -140,10 +140,45 @@ Create the secrets first so nothing ever types a password into a form twice.
 - Name `db-owner-password`, value: 32 random characters
 - Name `ledger-api-password`, value: 32 random characters
 
-Generate them with `openssl rand -base64 24` and paste. Do not reuse one for
+**Generate them with `openssl rand -hex 24`** and paste. Do not reuse one for
 both: the owner runs migrations, `ledger_api` is what the running API connects
 as, and the whole point of the second one is that it cannot do the first one's
 job.
+
+### Hex, not base64, and this is not a style preference
+
+These passwords get embedded in a URI —
+`postgresql://ledger_api:PASSWORD@/ledger?host=/cloudsql/…` — and
+`openssl rand -base64 24` emits from the alphabet `A–Za–z0–9+/`. **Both `+`
+and `/` are URI-special.** A `/` in the userinfo terminates the authority
+component, so the string stops meaning what it looks like it means.
+
+Measured over 200,000 samples: **64% of `base64 24` outputs contain a `+` or a
+`/`**, and 39.8% contain a `/` specifically. That is not an edge case, it is
+the common case.
+
+The failure would surface at deploy or on the first query as an authentication
+or host error, pointing at the database, the socket, or the role — anywhere
+except at the password's encoding. So the fix is the alphabet rather than
+escaping at the point of use: `rand -hex 24` is 48 characters of `0–9a–f`,
+192 bits of entropy, **URI-safe by construction**. Nothing downstream has to
+remember to encode it, which is the only kind of fix that survives.
+
+### If the secrets already exist, check them
+
+They were created before this section said any of the above. Reading them back
+is the only way to know:
+
+```powershell
+foreach ($n in 'db-owner-password','ledger-api-password') {
+  $v = (gcloud secrets versions access latest --secret=$n)
+  if ($v -match '[^A-Za-z0-9._~-]') { "$n : NOT URI-safe — rotate it" } else { "$n : ok" }
+}
+```
+
+It prints a verdict and never the value. Anything reported as not URI-safe
+should be rotated to a hex value **before** §2.2 of `docs/deploy.md` builds a
+connection string from it — rotating afterwards means rotating in two places.
 
 ## 4. Create the Cloud SQL instance
 
