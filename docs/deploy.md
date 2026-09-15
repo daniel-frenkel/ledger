@@ -29,6 +29,8 @@ state is:
 |---|---|
 | §1, and `deploy/gcp/cloudbuild.api.yaml` | **verified 14 Sept 2026** — `api:9ec4cea` built and pushed |
 | §3, the service account | **verified 15 Sept 2026** — `api-runtime`, three roles, nothing else |
+| §4, the service | **verified 15 Sept 2026** — revision `api-00002-rxv`, `CORS_ORIGINS` read back as three |
+| §5 | **not a step** — §6 runs the migrations |
 | §7, public ingress | **deferred** — not a prerequisite; §4 deploys private |
 | Everything else in this document | **written, not executed** |
 | `packages/api/scripts/verify-cloudsql.sh` (§6) | **written**; its four refusal guards were exercised locally, the script as a whole never was |
@@ -317,7 +319,26 @@ Identity Platform calls take their token from the metadata server of the
 running revision, which is why that works and why it is better than the
 long-lived key it replaces.
 
-## 4. Deploy the service
+## 4. Deploy the service — VERIFIED 15 September 2026
+
+**Revision `api-00002-rxv` serving.** `gcloud run services describe` reads back
+`CORS_ORIGINS` as three origins.
+
+**The delimiter matters, and the escaping bug was real rather than theoretical.**
+`--set-env-vars` splits the whole argument on commas, so any *value* containing
+one needs a different delimiter. The leading `^@^` declares it: everything
+after is separated by `@`, which leaves the commas inside `CORS_ORIGINS` alone.
+The `\,` escaping this section used to carry **does not survive**.
+
+That is worth the paragraph because of how it fails. A CORS allowlist that
+arrives as one origin instead of three **deploys successfully** and then
+refuses the client app in a browser — an error that surfaces nowhere near the
+command that caused it. The `describe` read-back is what makes it visible, and
+is why this section asks for one rather than trusting the deploy's exit code.
+
+```sh
+gcloud run services describe api --region=us-west1   --format='value(spec.template.spec.containers[0].env)'
+```
 
 ```sh
 gcloud run deploy api \
@@ -326,7 +347,7 @@ gcloud run deploy api \
   --service-account="$SA" \
   --min-instances=0 --max-instances=4 \
   --add-cloudsql-instances=courageloop-prod:us-west1:courageloop-db \
-  --set-env-vars=NODE_ENV=production,AUTH_PROVIDER=identity-platform,GCP_PROJECT_ID=courageloop-prod,DOCS_ROOT=/app,ASSISTANT_ENABLED=false,JOBS_ENABLED=false,CORS_ORIGINS=https://courageloop.com\,https://app.courageloop.com\,https://api.courageloop.com \
+  --set-env-vars=^@^NODE_ENV=production@AUTH_PROVIDER=identity-platform@GCP_PROJECT_ID=courageloop-prod@DOCS_ROOT=/app@ASSISTANT_ENABLED=false@JOBS_ENABLED=false@CORS_ORIGINS=https://courageloop.com,https://app.courageloop.com,https://api.courageloop.com \
   --set-secrets=DATABASE_URL=database-url:latest,DATABASE_MIGRATE_URL=database-migrate-url:latest,FIELD_ENCRYPTION_KEY=field-encryption-key:latest \
   --no-allow-unauthenticated
 ```
@@ -397,23 +418,30 @@ closing step. Two reasons, and the second is the one that matters:
 A job should start when the thing it queries exists. The `/health` 503 is a
 property of the route and stays either way.
 
-## 5. Migrations
+## 5. Migrations — not a step. §6 runs them.
 
-Run once against the new instance, before the first request that needs a table:
+**Do not try to run this section.** It is here as a pointer, because deleting
+it would leave a reader wondering where migrations happen.
 
-```sh
-CONFIRM_MIGRATE_HOST=/cloudsql/courageloop-prod:us-west1:courageloop-db \
-  pnpm db:migrate:prod
-```
+`verify-cloudsql.sh` already does it: step 2 creates `ledger_api` from
+`000_roles.sql`, step 3 runs `pnpm --filter @ledger/api db:migrate` as the
+owner. Running migrations separately would be doing the same work twice.
 
-It refuses unless `CONFIRM_MIGRATE_HOST` names the host in the connection
-string. A hostname rather than a boolean, for the same reason
-`ALLOW_DESTRUCTIVE_TESTS` is one: a `1` left in a shell profile goes on
-authorising whatever the connection string points at next, while a hostname
-stops being true the moment the target changes.
+**And it could not be done from here anyway**, for two independent reasons:
 
-This runs from wherever can reach the instance — in practice the same place as
-step 6.
+- **No network path.** The instance is private-IP only and there is no route to
+  it from a laptop — the same reason §6 exists as a job in the first place.
+- **`pnpm db:migrate:prod` needs the workspace**, and only the `verify` image
+  carries it. The runtime image has no `pnpm`, no workspace, and no migration
+  tooling.
+
+Someone who tries anyway will get a connection timeout and reasonably conclude
+the instance is broken. It is not; this is the wrong place to run it from.
+
+`db:migrate:prod` and its `CONFIRM_MIGRATE_HOST` guard still exist and are
+still right — for a future where something inside the VPC runs migrations on
+their own, separately from the verification job.
+
 
 ## 6. The Cloud SQL verification job — gate A2
 
@@ -423,12 +451,19 @@ access to the instance's VPC, and `constraints/sql.restrictPublicIp` is
 enforced org-wide and stays enforced. So the verification runs inside the VPC,
 as a job, executing the script unchanged.
 
-First the connector, on the network the instance peers to:
+**Direct VPC egress, not a Serverless VPC Access connector.** Two reasons, and
+the first is disqualifying on its own:
 
-```sh
-gcloud compute networks vpc-access connectors create courageloop-vpc \
-  --region=us-west1 --network=default --range=10.8.0.0/28
-```
+- **Serverless VPC Access is not on Google's HIPAA covered-products list.**
+  Cloud Run and VPC are. Direct VPC egress is a Cloud Run networking mode, so
+  it stays inside what the BAA covers; a connector is a separate product that
+  provisions Compute Engine instances.
+- **A connector is always-on VMs** — roughly $14/month for a gateway sitting
+  idle between schema changes. Direct egress bills network only and scales to
+  zero with the job.
+
+So there is no connector to create. The job takes the network directly, in the
+command below.
 
 Then a **separate image**. The runtime image cannot do this: it has no `pnpm`,
 no vitest, no test files and no `psql`, and giving it any of those to save a
@@ -454,7 +489,8 @@ gcloud run jobs create verify-cloudsql \
   --region=us-west1 \
   --image=us-west1-docker.pkg.dev/courageloop-prod/courageloop/verify:COMMIT \
   --service-account="$SA" \
-  --vpc-connector=courageloop-vpc \
+  --network=default --subnet=default \
+  --vpc-egress=private-ranges-only \
   --set-env-vars=CLOUDSQL_HOST=10.83.0.3,CLOUDSQL_INSTANCE=courageloop-prod:us-west1:courageloop-db \
   --set-secrets=PGPASSWORD_OWNER=db-owner-password:latest,PGPASSWORD_API=ledger-api-password:latest \
   --task-timeout=15m
@@ -470,11 +506,46 @@ history. Every refusal the script already has is unchanged: a host outside
 password or connection string printed at any point.
 
 **Why this is better than the laptop path**, not merely a substitute for it: it
-is repeatable on every schema change rather than something one person did once
-from a machine nobody else has; it never needs a public IP, so the org policy
-stays untouched; and it runs as the same service account the API uses against
-the same private endpoint, so what it proves is what production does. A proxy
-on a laptop proves a laptop could connect.
+never needs a public IP, so the org policy stays untouched, and it runs as the
+same service account the API uses against the same private endpoint, so what it
+proves is what production does. A proxy on a laptop proves a laptop could
+connect.
+
+### Repeatable while the database is empty — and not after
+
+**The script TRUNCATEs every table.** That is the RLS suite's normal behaviour
+and it is harmless today, because the database is empty.
+
+It stops being harmless the moment there is a client in it, and **none of the
+script's other refusals would catch that**: they all ask *which instance is
+this*, and every one would report success while the data went. This section
+used to call the job "repeatable on every schema change", which invites exactly
+that reading.
+
+So the script now **refuses unless every table in the `public` schema is
+empty** — checked after the migrations, because the tables have to exist, and
+before anything destructive. The escape hatch names the instance:
+
+```
+CONFIRM_WIPE_INSTANCE=courageloop-prod:us-west1:courageloop-db
+```
+
+Same reasoning as `CONFIRM_MIGRATE_HOST` and `ALLOW_DESTRUCTIVE_TESTS`: a
+boolean left set in a profile goes on authorising whatever the script points at
+next, while a name stops being true the moment the target changes.
+
+The script also **restores the instance to empty when it finishes**. The guard
+proved it was empty beforehand, so everything present afterwards was put there
+by the suite, and clearing it makes a re-run possible without reaching for the
+escape hatch — because **an escape hatch reached for routinely has stopped
+protecting anything.**
+
+**What would change this: the first real client's data.** From that point this
+method is unavailable, and re-verifying A2 after a schema change needs a
+different one — a restored backup brought up as a scratch instance, or a fresh
+instance migrated from the same SQL. Worth saying plainly: **the verification
+stops being available exactly when it starts mattering most.** Decide the
+replacement before there is data, not after.
 
 **Gate A2 closes on the case count this prints, and on nothing else.** CI
 already runs the RLS suite against vanilla PostgreSQL on every push, so the
