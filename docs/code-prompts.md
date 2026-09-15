@@ -4,6 +4,32 @@ How this works: paste **Prompt 0** at the start of every Code session (it's the 
 
 Migration ledger (contiguous, immutable once on main): 0000–0003 landed through Prompt 7 Part 1 · 0004 locating assistant (Prompt 7 Part 4, PR #20) · 0005 training stack (Prompt 13, PR #21) · 0006 counts_for + IMS + measures table (Prompt 14, PR #22) · 0007 account deletion, system role, tombstone (Prompt 4, PR #23) · 0008 audit/MFA/BAA (Prompt 10) · 0009 research readiness (Prompt 8) · 0010 reference assistant threads (Prompt 9). Landed: 0000–0007. Queue: 15 (rename) → 11 (GCP; project courageloop-prod, us-west1, BAA accepted 11 Sep 2026) → 2 (revised) → 8 → 9 — Prompt 10 landed as 0008. Prompt 12 is unused. Decided, not built: individually deleted entries get the same 30-day grace and purge job, children first; measures taken under an active clinician link survive a client purge (care record), measures with no link purge with the account — draw that line in Prompt 8.
 
+## OPEN RECOMMENDATIONS
+
+Recommendations that need a ruling and are not themselves a gate or a PR.
+**Claude appends; Daniel clears by ruling, and the ruling replaces the entry.**
+
+This exists because a recommendation made inside a report about a *different*
+subject has nowhere to live. It is not a gate, it is not a PR, and the next
+message is about the next thing — so it evaporates, and neither of us can later
+tell whether it was decided, relayed, or lost. That happened with Direct VPC
+egress: a ruling was written and never arrived, which from the other side is
+indistinguishable from a ruling never made.
+
+Two properties do the work. **Entries accumulate visibly**, so something that
+fell through the gap is a line sitting in a file rather than a thing nobody
+remembers. And **an entry still open across several sessions is itself the
+signal** that something is stuck — the age is the finding.
+
+One line each: the date, the recommendation, and where it came from.
+
+| Since | Recommendation | Came from |
+|---|---|---|
+| 2026-09-11 | **`CONSENT_VERSION` should read `docs/research/consent-text.md`'s frontmatter instead of being a constant.** `routes/me.ts:57` hardcodes `'draft-2026-09-10'`; the document's frontmatter says the same string. They agree today because the same text was typed twice, and nothing keeps them agreeing. This is the duplication that was closed for the BAA — `baa.ts` reads its document and a test asserts they match — left open for consent. Recording consent to a version nobody can produce is the same failure either way. | Prompt 8 report, OPEN item |
+| 2026-09-11 | **The reliability study and the locating-assistant eval should share one stimulus fixture, not grow two.** Both point at `docs/theory/eval/locate-notes.md`, which is `status: DRAFT — placeholder rows only`. Filling it is the author's work; what needs a ruling is whether it stays one fixture when it is filled, because two would drift and the inter-rater figures would stop being comparable. | Prompt 8 report, OPEN item |
+
+---
+
 ---
 
 ## Prompt 0 — Session preamble (paste first, every time)
@@ -47,6 +73,7 @@ Standing rules. These are not negotiable and you do not need to ask about them:
 - **A skipped test is a test that is not running, and CI asserts the skip count, not only the pass count.** `test-skips.json` is the inventory: how many skips each package may have, which ones, and why each is allowed. `scripts/check-skips.mjs` fails when a skip appears *or* disappears, because both are changes to what this repository checks. Neither is necessarily a bug; both are necessarily a decision, and it belongs in the inventory rather than in whoever reads the summary line that week. A pass count cannot catch this — six tests turning into skips drops the pass count by six and nobody knows what it should have been.
 - **When I give a command in chat that the docs already contain, treat the documented one as authoritative and tell me they diverge.** A command composed in a message has not been run; the one in the document has. The failure mode is substituting an unverified version for a verified one and then "fixing" the artifact to match it.
 - **When I name a section number, treat it as a guess.** Place content by what it *is* — an ongoing obligation, a hosting decision, provider configuration, an accepted risk — and tell me where it went. I will describe the category rather than the location from here.
+- **When you recommend something that needs a ruling and is not itself a gate or a PR, append it to OPEN RECOMMENDATIONS at the top of this file** — dated, one line, with where it came from. A recommendation made inside a report about a different subject otherwise has nowhere to live, and evaporates between one message and the next. Do not act on it; do not drop it.
 - **Open every report by naming the instruction you are answering**, on its own line: *Responding to: the ruling on Cloud NAT and Serverless VPC Access.* Messages are relayed, so they cross — and when they do, whoever reads the report cannot always tell which instruction reached you first. One line at the top makes a crossed message visible in the first sentence instead of the last, which is where it has been costing a round trip each time.
 - Work on a branch named for the task. Never commit to main. Never commit .env. Commit messages: what and why, no fluff.
 - Before you say you're done: `pnpm -r typecheck`, `pnpm -r test`, and (if a Postgres is available) `pnpm --filter @ledger/api test:rls` all pass. If you can't run something, say so explicitly.
