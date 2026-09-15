@@ -265,6 +265,95 @@ gcloud secrets versions add db-owner-password --data-file=-
 be altered over a connection we do not have — would have applied to
 `ledger_api`, and it does not, because that role has not been created yet.
 
+#### PowerShell, which is where Daniel actually is
+
+The `sh` forms above are correct and work in Git Bash. These are the same two
+operations in PowerShell, and they fix one thing the `sh` form gets wrong.
+
+First, a helper — `gcloud secrets versions add` needs the same treatment as
+`secrets create` in `docs/deploy.md` §2.2, and for the same reason: piping a
+string in PowerShell appends a newline, and a secret one byte longer than the
+password fails every use without saying so.
+
+```powershell
+function New-SecretVersion([string]$Name, [string]$Value) {
+  $tmp = [System.IO.Path]::GetTempFileName()
+  try {
+    # UTF-8, no BOM, no trailing newline. Set-Content and Out-File add one.
+    [System.IO.File]::WriteAllText($tmp, $Value)
+    gcloud secrets versions add $Name --data-file=$tmp
+  } finally {
+    Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+  }
+}
+```
+
+**`ledger-api-password` — the secret only. No role exists.**
+
+```powershell
+$bytes = [byte[]]::new(24)
+[System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+$pw = [System.Convert]::ToHexString($bytes).ToLower()
+
+New-SecretVersion 'ledger-api-password' $pw
+
+Remove-Variable pw
+[Array]::Clear($bytes, 0, $bytes.Length)
+```
+
+**`db-owner-password` — the database and the secret, from one generated value.**
+
+> **The `sh` form has a flaw this fixes.** `--prompt-for-password` asks for the
+> password, and then the secret has to be given the same value a second time.
+> **Two typings of the same string is two chances to type it differently**, and
+> if they differ nothing complains: the database has one password and the
+> secret has another, and you find out at the next deploy, from an
+> authentication error that says nothing about which of the two is wrong.
+>
+> Generate once, into a variable, and use that variable for both.
+
+```powershell
+$bytes = [byte[]]::new(24)
+[System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+$pw = [System.Convert]::ToHexString($bytes).ToLower()
+
+# 1. The database.
+gcloud sql users set-password postgres --instance=courageloop-db --password=$pw
+
+# 2. The secret — the SAME value, not a re-typed one.
+New-SecretVersion 'db-owner-password' $pw
+
+# Only after both have succeeded.
+Remove-Variable pw
+[Array]::Clear($bytes, 0, $bytes.Length)
+```
+
+**Do not put the clear-down in a `finally`.** If step 2 fails, the database has
+the new password and the secret does not — and `$pw` is the only place that
+value now exists. Clearing it there would lock you out of the instance. Leave
+it in the session, fix the secret, *then* clear.
+
+**On `--password=$pw` and where the value goes.** PowerShell's history records
+the command **text**, not its expansion, so the file keeps `--password=$pw` and
+never the password — which is why this is written as a variable rather than
+pasted. The residual is that the value is in the process's arguments for the
+duration of the `gcloud` call, visible to another process on the same machine
+during that second. On a single-user laptop that is an acceptable trade against
+the desynchronisation it prevents; on a shared machine, use the `sh` form and
+type it twice, carefully.
+
+`RandomNumberGenerator.Fill` rather than `Get-Random`: the latter is not
+cryptographically secure and is the wrong tool for a database password, however
+convenient.
+
+**What was actually run, 15 September 2026.** The generator and the file write
+were executed on this machine: `Fill` + `ToHexString().ToLower()` produces 48
+characters matching `^[0-9a-f]{48}$` and passing the check in step 1 above, and
+`WriteAllText` writes exactly three bytes for `abc` — **no BOM, no trailing
+newline**, which is the property the whole helper exists for. The two `gcloud`
+calls were not run; they are the part that changes something.
+
+
 #### Do it now, because right now it is free
 
 `database-url` and `database-migrate-url` **do not exist yet** — §2.2 of
